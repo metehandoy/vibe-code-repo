@@ -26,8 +26,8 @@
     // ============================================================
     const CFG = {
         ARROW_SPEED: 3.5,
-        STEER_RATE: 0.018,
-        STEER_MAX: 0.06,
+        STEER_RATE: 0.014,          // slightly slower rotation for less dizziness
+        STEER_MAX: 0.045,           // lower cap to prevent extreme spinning
         GRIP: 0.025,
         REALIGN_RATE: 0.04,
         DRIFT_DRAG_EXP: 2.0,
@@ -41,11 +41,13 @@
         LOOK_BEHIND: 100,
         WALL_SLOW: 0.95,
         SPEED_RECOVERY: 0.012,
+        SPEED_RECOVERY_RELEASE: 0.06, // fast recovery when drift key released
         DIFFICULTY_RAMP: 0.00012,
+        SELF_AVOID_DIST: 120,       // min distance between non-adjacent track sections
         // Timer
-        START_TIME: 30,             // seconds on clock at start
-        TIME_TOKEN_VALUE: 3.5,      // seconds added per token
-        TOKEN_RADIUS: 10,           // visual size of time token
+        START_TIME: 30,
+        TIME_TOKEN_VALUE: 3.5,
+        TOKEN_RADIUS: 10,
     };
 
     // ============================================================
@@ -115,17 +117,17 @@
                 this.turnRemaining = this.patternData.segsPerTurn;
                 this.patternStep = 0;
             } else if (r < 0.48) {
-                // Hairpin: very tight U-turn
+                // Hairpin: tight U-turn (capped to prevent full loops)
                 this.pattern = PATTERN.HAIRPIN;
                 this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                this.turnRemaining = 20 + Math.floor(Math.random() * 25);
-                this.patternData = { sharpness: 0.06 + d * 0.07 };
+                this.turnRemaining = 15 + Math.floor(Math.random() * 20);
+                this.patternData = { sharpness: 0.05 + d * 0.04 };
             } else if (r < 0.65 && d > 0.2) {
-                // Spiral: sustained turning that tightens
+                // Spiral: sustained turning that tightens (shorter, less extreme)
                 this.pattern = PATTERN.SPIRAL;
                 this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                this.turnRemaining = 35 + Math.floor(Math.random() * 30);
-                this.patternData = { baseSharp: 0.03, ramp: 0.0015 + d * 0.002 };
+                this.turnRemaining = 20 + Math.floor(Math.random() * 20);
+                this.patternData = { baseSharp: 0.025, ramp: 0.001 + d * 0.0015 };
                 this.patternStep = 0;
             } else if (r < 0.82 && d > 0.15) {
                 // Slalom: rapid small wiggles
@@ -144,6 +146,27 @@
                 this.turnRemaining = 10 + Math.floor(Math.random() * 18);
                 this.patternData = { sharpness: 0.04 + d * 0.055 };
             }
+        }
+
+        // Check if a candidate point is too close to existing (non-recent) spine segments
+        _wouldOverlap(cx, cy) {
+            const minDist = CFG.SELF_AVOID_DIST;
+            const recentThreshold = 40; // ignore the last N segments (they're adjacent)
+            const len = this.spine.length;
+            if (len < recentThreshold) return null;
+            // Only check older segments (skip the most recent ones which are nearby by design)
+            const checkEnd = len - recentThreshold;
+            for (let i = 0; i < checkEnd; i += 3) { // step by 3 for performance
+                const s = this.spine[i];
+                const dx = cx - s.x;
+                const dy = cy - s.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < minDist * minDist) {
+                    // Return the angle away from the conflicting segment
+                    return Math.atan2(cy - s.y, cx - s.x);
+                }
+            }
+            return null;
         }
 
         generateNext() {
@@ -184,7 +207,6 @@
                     }
                 }
 
-                // When pattern ends, immediately pick next
                 if (this.turnRemaining <= 0 && this.pattern !== PATTERN.CHICANE) {
                     this._pickPattern();
                 }
@@ -192,14 +214,32 @@
                 this._pickPattern();
             }
 
-            this.lastX += Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
-            this.lastY += Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+            // Compute candidate position
+            let candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
+            let candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+
+            // Self-intersection avoidance: if candidate is too close to older track,
+            // steer away from the conflict
+            const awayAngle = this._wouldOverlap(candX, candY);
+            if (awayAngle !== null) {
+                // Blend current angle toward the "away" direction
+                const diff = normalizeAngle(awayAngle - this.currentAngle);
+                this.currentAngle += diff * 0.15; // steer 15% toward away direction
+                // Cancel current pattern to let avoidance take over
+                this.turnRemaining = 0;
+                this.straightRemaining = 0;
+                // Recompute candidate
+                candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
+                candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+            }
+
+            this.lastX = candX;
+            this.lastY = candY;
 
             // Dynamic width
             const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty);
             const widthPulse = Math.sin(this.segmentIndex * 0.035) * 18;
             const widthJitter = (Math.random() - 0.5) * 6;
-            // Narrow heavily on sharp patterns, widen on straights
             let patternNarrow = 0;
             if (this.pattern === PATTERN.HAIRPIN || this.pattern === PATTERN.SPIRAL) {
                 patternNarrow = -18 * this.difficulty;
@@ -344,8 +384,16 @@
             this.y += Math.sin(this.moveAngle) * speed;
             this.totalDistance += speed;
 
-            // Recover speed gradually (always recovers, faster when straight)
-            const recoveryRate = this.driftAmount < 0.05 ? CFG.SPEED_RECOVERY : CFG.SPEED_RECOVERY * 0.3;
+            // Recover speed: fast burst when releasing drift, slower while drifting
+            let recoveryRate;
+            if (inputDir === 0 && this.driftAmount < 0.15) {
+                // Not pressing and drift is settling — snap speed back quickly
+                recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
+            } else if (this.driftAmount < 0.05) {
+                recoveryRate = CFG.SPEED_RECOVERY * 2;
+            } else {
+                recoveryRate = CFG.SPEED_RECOVERY * 0.3;
+            }
             if (this.speedMult < 1) {
                 this.speedMult = Math.min(1, this.speedMult + recoveryRate * dt60);
             }
