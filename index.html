@@ -39,11 +39,9 @@
         SEGMENT_LENGTH: 12,
         LOOK_AHEAD: 120,
         LOOK_BEHIND: 100,
-        WALL_SLOW: 0.95,
         SPEED_RECOVERY: 0.012,
         SPEED_RECOVERY_RELEASE: 0.06,
         DIFFICULTY_RAMP: 0.00012,
-        SELF_AVOID_DIST: 250,
         METERS_PER_SEGMENT: 0.03,   // 1/100 scale — arrow ≈10cm, km takes very long
         // Timer
         START_TIME: 30,
@@ -94,10 +92,24 @@
             this.turnRemaining = 0;
             this.pattern = PATTERN.STRAIGHT;
             this.patternStep = 0;
+            this._cumAngle = 0;
+            this._lastTurnDir = 0; // force alternation: next turn goes opposite
 
             for (let i = 0; i < CFG.LOOK_AHEAD + CFG.LOOK_BEHIND + 20; i++) {
                 this.generateNext();
             }
+        }
+
+        _pickTurnDir() {
+            // Force alternation: always turn opposite to last turn
+            if (this._lastTurnDir !== 0) {
+                const dir = -this._lastTurnDir;
+                this._lastTurnDir = dir;
+                return dir;
+            }
+            const dir = Math.random() < 0.5 ? -1 : 1;
+            this._lastTurnDir = dir;
+            return dir;
         }
 
         _pickPattern() {
@@ -107,6 +119,7 @@
                 // Short straight breather
                 this.pattern = PATTERN.STRAIGHT;
                 this.straightRemaining = 3 + Math.floor(Math.random() * 6 * (1 - d * 0.5));
+                this._lastTurnDir = 0; // reset after straight, allow any direction next
             } else if (r < 0.28) {
                 // S-curve chicane: alternating sharp turns
                 this.pattern = PATTERN.CHICANE;
@@ -115,21 +128,23 @@
                     segsPerTurn: 4 + Math.floor(Math.random() * 7),
                     sharpness: 0.06 + d * 0.10,
                 };
-                this.turnDir = Math.random() < 0.5 ? -1 : 1;
+                this.turnDir = this._pickTurnDir();
                 this.turnRemaining = this.patternData.segsPerTurn;
                 this.patternStep = 0;
             } else if (r < 0.48) {
-                // Hairpin: tight U-turn
+                // Hairpin: tight U-turn (max ~120° to prevent loops)
                 this.pattern = PATTERN.HAIRPIN;
-                this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                this.turnRemaining = 10 + Math.floor(Math.random() * 18);
-                this.patternData = { sharpness: 0.07 + d * 0.08 };
+                this.turnDir = this._pickTurnDir();
+                this.turnRemaining = 8 + Math.floor(Math.random() * 14);
+                this.patternData = { sharpness: 0.07 + d * 0.07, maxTotal: Math.PI * 0.65 };
+                this.patternData.turned = 0;
             } else if (r < 0.65 && d > 0.2) {
-                // Spiral: sustained turning that tightens
+                // Spiral: sustained turning that tightens (max ~150°)
                 this.pattern = PATTERN.SPIRAL;
-                this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                this.turnRemaining = 15 + Math.floor(Math.random() * 20);
-                this.patternData = { baseSharp: 0.035, ramp: 0.002 + d * 0.003 };
+                this.turnDir = this._pickTurnDir();
+                this.turnRemaining = 12 + Math.floor(Math.random() * 16);
+                this.patternData = { baseSharp: 0.03, ramp: 0.0015 + d * 0.002, maxTotal: Math.PI * 0.8 };
+                this.patternData.turned = 0;
                 this.patternStep = 0;
             } else if (r < 0.82 && d > 0.15) {
                 // Slalom: rapid small wiggles
@@ -142,52 +157,78 @@
                 this.turnRemaining = this.patternData.length;
                 this.patternStep = 0;
             } else {
-                // Normal curve
+                // Normal curve (max ~100°)
                 this.pattern = PATTERN.CURVE;
-                this.turnDir = Math.random() < 0.5 ? -1 : 1;
+                this.turnDir = this._pickTurnDir();
                 this.turnRemaining = 8 + Math.floor(Math.random() * 16);
-                this.patternData = { sharpness: 0.05 + d * 0.09 };
+                this.patternData = { sharpness: 0.05 + d * 0.09, maxTotal: Math.PI * 0.55, turned: 0 };
             }
         }
 
-        // Check if a candidate point is too close to existing (non-recent) spine segments
-        _wouldOverlap(cx, cy) {
-            const minDist = CFG.SELF_AVOID_DIST;
-            const recentThreshold = 60; // ignore the last N segments (they're adjacent)
+        // Returns the minimum distance from (cx,cy) to any non-recent spine segment
+        _minDistToOldTrack(cx, cy) {
+            const recentThreshold = 60;
             const len = this.spine.length;
-            if (len < recentThreshold) return null;
+            if (len < recentThreshold) return Infinity;
             const checkEnd = len - recentThreshold;
-            let closestDist = Infinity;
-            let closestAngle = null;
-            // Check every segment for accuracy
+            let minD2 = Infinity;
             for (let i = 0; i < checkEnd; i++) {
                 const s = this.spine[i];
                 const dx = cx - s.x;
                 const dy = cy - s.y;
                 const d2 = dx * dx + dy * dy;
-                if (d2 < minDist * minDist && d2 < closestDist) {
-                    closestDist = d2;
-                    closestAngle = Math.atan2(dy, dx);
-                }
+                if (d2 < minD2) minD2 = d2;
             }
-            return closestAngle;
+            return Math.sqrt(minD2);
+        }
+
+        // Check if candidate position would cause wall overlap with RECENT segments
+        // (which are skipped by the distant-segment check)
+        // Returns true if walls would overlap
+        _wouldOverlapRecent(cx, cy, candWidth) {
+            const skipLast = 10; // truly adjacent segments (always close)
+            const checkWindow = 120; // check segments 10-120 back
+            const len = this.spine.length;
+            if (len < skipLast + 5) return false;
+            const checkStart = Math.max(0, len - checkWindow);
+            const checkEnd = len - skipLast;
+            const margin = 15;
+            for (let i = checkStart; i < checkEnd; i++) {
+                const s = this.spine[i];
+                const dx = cx - s.x;
+                const dy = cy - s.y;
+                const centerDist = Math.sqrt(dx * dx + dy * dy);
+                const combinedHW = (candWidth + s.width) / 2;
+                if (centerDist < combinedHW + margin) return true;
+            }
+            return false;
         }
 
         generateNext() {
             this.segmentIndex++;
             this.difficulty = Math.min(1, this.segmentIndex * CFG.DIFFICULTY_RAMP);
+            const prevAngle = this.currentAngle;
 
             if (this.straightRemaining > 0) {
                 this.straightRemaining--;
                 this.currentAngle += (Math.random() - 0.5) * 0.01;
+                // Decay cumulative angle during straights
+                this._cumAngle *= 0.85;
             } else if (this.turnRemaining > 0) {
                 this.turnRemaining--;
                 this.patternStep++;
 
                 switch (this.pattern) {
-                    case PATTERN.CURVE:
-                        this.currentAngle += this.turnDir * this.patternData.sharpness;
+                    case PATTERN.CURVE: {
+                        const cTurn = this.patternData.sharpness;
+                        this.patternData.turned += cTurn;
+                        if (this.patternData.turned > this.patternData.maxTotal) {
+                            this.turnRemaining = 0;
+                        } else {
+                            this.currentAngle += this.turnDir * cTurn;
+                        }
                         break;
+                    }
                     case PATTERN.CHICANE:
                         this.currentAngle += this.turnDir * this.patternData.sharpness;
                         if (this.turnRemaining <= 0 && this.patternStep < this.patternData.turns) {
@@ -196,12 +237,25 @@
                             this.patternStep++;
                         }
                         break;
-                    case PATTERN.HAIRPIN:
-                        this.currentAngle += this.turnDir * this.patternData.sharpness;
+                    case PATTERN.HAIRPIN: {
+                        const hTurn = this.patternData.sharpness;
+                        this.patternData.turned += hTurn;
+                        if (this.patternData.turned > this.patternData.maxTotal) {
+                            this.turnRemaining = 0; // stop turning
+                        } else {
+                            this.currentAngle += this.turnDir * hTurn;
+                        }
                         break;
+                    }
                     case PATTERN.SPIRAL: {
                         const sharp = this.patternData.baseSharp + this.patternStep * this.patternData.ramp;
-                        this.currentAngle += this.turnDir * Math.min(sharp, 0.16);
+                        const sTurn = Math.min(sharp, 0.12);
+                        this.patternData.turned += sTurn;
+                        if (this.patternData.turned > this.patternData.maxTotal) {
+                            this.turnRemaining = 0;
+                        } else {
+                            this.currentAngle += this.turnDir * sTurn;
+                        }
                         break;
                     }
                     case PATTERN.SLALOM: {
@@ -218,31 +272,66 @@
                 this._pickPattern();
             }
 
+            // Track cumulative angle — force straight if turning too much
+            const angleDelta = this.currentAngle - prevAngle;
+            this._cumAngle += angleDelta;
+            if (Math.abs(this._cumAngle) > Math.PI * 0.45) {
+                // Too much turning in one direction — force a straight breather
+                this.turnRemaining = 0;
+                this.straightRemaining = Math.max(this.straightRemaining, 15);
+                this._cumAngle = 0;
+                this._lastTurnDir = 0;
+            }
+
             // Compute candidate position
             let candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
             let candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+            const estWidth = this.spine.length > 0 ? this.spine[this.spine.length - 1].width : CFG.TRACK_WIDTH;
 
-            // Self-intersection avoidance: if candidate is too close to older track,
-            // steer hard away from the conflict
-            const awayAngle = this._wouldOverlap(candX, candY);
-            if (awayAngle !== null) {
-                const diff = normalizeAngle(awayAngle - this.currentAngle);
-                this.currentAngle += diff * 0.5; // steer 50% toward away direction
-                // Cancel current pattern to let avoidance take over
+            // Check 1: wall overlap with recent segments (prevents tight loops)
+            let recentOverlap = this._wouldOverlapRecent(candX, candY, estWidth);
+
+            // Check 2: predictive avoidance for distant segments
+            const safeDist = CFG.TRACK_WIDTH * 3.5;
+            const lookSteps = [1, 3, 6, 10, 16, 24, 35, 50];
+            let distantThreat = false;
+            if (!recentOverlap) {
+                for (const step of lookSteps) {
+                    const lx = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH * step;
+                    const ly = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH * step;
+                    if (this._minDistToOldTrack(lx, ly) < safeDist) {
+                        distantThreat = true;
+                        break;
+                    }
+                }
+            }
+
+            if (recentOverlap || distantThreat) {
+                let bestAngle = this.currentAngle;
+                let bestScore = -Infinity;
+                for (let i = 0; i < 36; i++) {
+                    const testAngle = this.currentAngle + (i / 36) * Math.PI * 2;
+                    const tx = this.lastX + Math.cos(testAngle) * CFG.SEGMENT_LENGTH;
+                    const ty = this.lastY + Math.sin(testAngle) * CFG.SEGMENT_LENGTH;
+                    // Reject angles that cause recent wall overlap
+                    if (this._wouldOverlapRecent(tx, ty, estWidth)) continue;
+                    // Score by minimum distance at multiple look-ahead points
+                    let minScore = Infinity;
+                    for (const step of lookSteps) {
+                        const lx = this.lastX + Math.cos(testAngle) * CFG.SEGMENT_LENGTH * step;
+                        const ly = this.lastY + Math.sin(testAngle) * CFG.SEGMENT_LENGTH * step;
+                        const d = this._minDistToOldTrack(lx, ly);
+                        if (d < minScore) minScore = d;
+                    }
+                    if (minScore > bestScore) {
+                        bestScore = minScore;
+                        bestAngle = testAngle;
+                    }
+                }
+                this.currentAngle = bestAngle;
                 this.turnRemaining = 0;
-                this.straightRemaining = 5; // brief straight to escape
-                // Recompute candidate
                 candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
                 candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
-                // Double-check — if still overlapping, steer even harder
-                const awayAngle2 = this._wouldOverlap(candX, candY);
-                if (awayAngle2 !== null) {
-                    const diff2 = normalizeAngle(awayAngle2 - this.currentAngle);
-                    this.currentAngle += diff2 * 0.8;
-                    this.straightRemaining = 10;
-                    candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
-                    candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
-                }
             }
 
             this.lastX = candX;
