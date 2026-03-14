@@ -34,8 +34,8 @@
         DRIFT_DRAG_SCALE: 0.025,
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
-        TRACK_WIDTH: 130,
-        MIN_TRACK_WIDTH: 55,
+        TRACK_WIDTH: 140,
+        MIN_TRACK_WIDTH: 32,
         SEGMENT_LENGTH: 12,
         LOOK_AHEAD: 120,
         LOOK_BEHIND: 100,
@@ -44,7 +44,7 @@
         SPEED_RECOVERY_RELEASE: 0.06,
         DIFFICULTY_RAMP: 0.00012,
         SELF_AVOID_DIST: 120,
-        METERS_PER_SEGMENT: 3,      // low value so km takes a while to reach
+        METERS_PER_SEGMENT: 0.03,   // 1/100 scale — arrow ≈10cm, km takes very long
         // Timer
         START_TIME: 30,
         TIME_TOKEN_VALUE: 3.5,
@@ -89,6 +89,7 @@
             this.spine = [];
             this.segmentIndex = 0;
             this.difficulty = 0;
+            this.backWall = null;
             this.straightRemaining = 20;
             this.turnRemaining = 0;
             this.pattern = PATTERN.STRAIGHT;
@@ -110,33 +111,33 @@
                 // S-curve chicane: alternating sharp turns
                 this.pattern = PATTERN.CHICANE;
                 this.patternData = {
-                    turns: 2 + Math.floor(Math.random() * 3 + d * 2), // 2-6 alternations
-                    segsPerTurn: 6 + Math.floor(Math.random() * 8),
-                    sharpness: 0.05 + d * 0.06,
+                    turns: 2 + Math.floor(Math.random() * 3 + d * 2),
+                    segsPerTurn: 4 + Math.floor(Math.random() * 7),
+                    sharpness: 0.06 + d * 0.10,
                 };
                 this.turnDir = Math.random() < 0.5 ? -1 : 1;
                 this.turnRemaining = this.patternData.segsPerTurn;
                 this.patternStep = 0;
             } else if (r < 0.48) {
-                // Hairpin: tight U-turn (capped to prevent full loops)
+                // Hairpin: tight U-turn
                 this.pattern = PATTERN.HAIRPIN;
                 this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                this.turnRemaining = 15 + Math.floor(Math.random() * 20);
-                this.patternData = { sharpness: 0.05 + d * 0.04 };
+                this.turnRemaining = 10 + Math.floor(Math.random() * 18);
+                this.patternData = { sharpness: 0.07 + d * 0.08 };
             } else if (r < 0.65 && d > 0.2) {
-                // Spiral: sustained turning that tightens (shorter, less extreme)
+                // Spiral: sustained turning that tightens
                 this.pattern = PATTERN.SPIRAL;
                 this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                this.turnRemaining = 20 + Math.floor(Math.random() * 20);
-                this.patternData = { baseSharp: 0.025, ramp: 0.001 + d * 0.0015 };
+                this.turnRemaining = 15 + Math.floor(Math.random() * 20);
+                this.patternData = { baseSharp: 0.035, ramp: 0.002 + d * 0.003 };
                 this.patternStep = 0;
             } else if (r < 0.82 && d > 0.15) {
                 // Slalom: rapid small wiggles
                 this.pattern = PATTERN.SLALOM;
                 this.patternData = {
-                    freq: 0.15 + Math.random() * 0.1,
-                    amp: 0.04 + d * 0.05,
-                    length: 20 + Math.floor(Math.random() * 25),
+                    freq: 0.18 + Math.random() * 0.15,
+                    amp: 0.06 + d * 0.08,
+                    length: 15 + Math.floor(Math.random() * 25),
                 };
                 this.turnRemaining = this.patternData.length;
                 this.patternStep = 0;
@@ -144,8 +145,8 @@
                 // Normal curve
                 this.pattern = PATTERN.CURVE;
                 this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                this.turnRemaining = 10 + Math.floor(Math.random() * 18);
-                this.patternData = { sharpness: 0.04 + d * 0.055 };
+                this.turnRemaining = 8 + Math.floor(Math.random() * 16);
+                this.patternData = { sharpness: 0.05 + d * 0.09 };
             }
         }
 
@@ -198,7 +199,7 @@
                         break;
                     case PATTERN.SPIRAL: {
                         const sharp = this.patternData.baseSharp + this.patternStep * this.patternData.ramp;
-                        this.currentAngle += this.turnDir * Math.min(sharp, 0.12);
+                        this.currentAngle += this.turnDir * Math.min(sharp, 0.16);
                         break;
                     }
                     case PATTERN.SLALOM: {
@@ -237,19 +238,20 @@
             this.lastX = candX;
             this.lastY = candY;
 
-            // Dynamic width
+            // Dynamic width — much more variation, including very narrow passages
             const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty);
-            const widthPulse = Math.sin(this.segmentIndex * 0.035) * 18;
-            const widthJitter = (Math.random() - 0.5) * 6;
+            const widthPulse = Math.sin(this.segmentIndex * 0.035) * 30;
+            const widthPulse2 = Math.sin(this.segmentIndex * 0.009) * 20; // slower wide swings
+            const widthJitter = (Math.random() - 0.5) * 10;
             let patternNarrow = 0;
             if (this.pattern === PATTERN.HAIRPIN || this.pattern === PATTERN.SPIRAL) {
-                patternNarrow = -18 * this.difficulty;
+                patternNarrow = -35 * this.difficulty;
             } else if (this.pattern === PATTERN.CHICANE || this.pattern === PATTERN.SLALOM) {
-                patternNarrow = -10 * this.difficulty;
+                patternNarrow = -25 * this.difficulty;
             } else if (this.pattern === PATTERN.STRAIGHT) {
-                patternNarrow = 8;
+                patternNarrow = 12;
             }
-            const trackW = clamp(baseW + widthPulse + widthJitter + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
+            const trackW = clamp(baseW + widthPulse + widthPulse2 + widthJitter + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
 
             let smoothW = trackW;
             if (this.spine.length > 0) {
@@ -267,9 +269,16 @@
 
         // Trim old segments and generate new ones
         update(arrowSegIdx) {
-            // Remove segments far behind
+            // Remove segments far behind — store a back wall at the cut point
             while (this.spine.length > 0 && this.spine[0].index < arrowSegIdx - CFG.LOOK_BEHIND) {
-                this.spine.shift();
+                const removed = this.spine.shift();
+                // Place a barrier wall at the last removed segment
+                this.backWall = {
+                    x: removed.x,
+                    y: removed.y,
+                    angle: removed.angle,
+                    width: removed.width + 40 // slightly wider than track
+                };
             }
             // Generate ahead
             const needed = arrowSegIdx + CFG.LOOK_AHEAD;
@@ -729,16 +738,41 @@
         }
         tokenCollect() {
             if (!this._ensure()) return;
-            const o = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            o.connect(g); g.connect(this.ctx.destination);
-            o.type = 'sine';
-            const t = this.ctx.currentTime;
-            o.frequency.setValueAtTime(600, t);
-            o.frequency.linearRampToValueAtTime(1200, t + 0.1);
-            g.gain.setValueAtTime(0.25, t);
-            g.gain.linearRampToValueAtTime(0, t + 0.2);
-            o.start(t); o.stop(t + 0.2);
+            const ctx = this.ctx;
+            const t = ctx.currentTime;
+
+            // Pick a random pentatonic note for variety (C, D, E, G, A across octaves)
+            const notes = [523, 587, 659, 784, 880, 1047, 1175, 1319];
+            const baseFreq = notes[Math.floor(Math.random() * notes.length)];
+            // Slight random detune for organic feel
+            const detune = (Math.random() - 0.5) * 30;
+
+            // Soft sine chime — main tone
+            const o1 = ctx.createOscillator();
+            const g1 = ctx.createGain();
+            o1.type = 'sine';
+            o1.frequency.setValueAtTime(baseFreq, t);
+            o1.detune.setValueAtTime(detune, t);
+            o1.connect(g1);
+            g1.gain.setValueAtTime(0, t);
+            g1.gain.linearRampToValueAtTime(0.12, t + 0.02);
+            g1.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+
+            // Soft harmonic overtone (octave + fifth above)
+            const o2 = ctx.createOscillator();
+            const g2 = ctx.createGain();
+            o2.type = 'sine';
+            o2.frequency.setValueAtTime(baseFreq * 1.5, t);
+            o2.detune.setValueAtTime(-detune, t);
+            o2.connect(g2);
+            g2.gain.setValueAtTime(0, t);
+            g2.gain.linearRampToValueAtTime(0.05, t + 0.01);
+            g2.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+
+            g1.connect(ctx.destination);
+            g2.connect(ctx.destination);
+            o1.start(t); o1.stop(t + 0.5);
+            o2.start(t); o2.stop(t + 0.35);
         }
     }
 
@@ -798,6 +832,19 @@
             // Neon walls
             this._drawNeonLine(leftWall, '#ff00ff', 3);
             this._drawNeonLine(rightWall, '#00ffff', 3);
+
+            // Back wall barrier (red glow across deleted track)
+            if (track.backWall) {
+                const bw = track.backWall;
+                const nx = Math.cos(bw.angle + Math.PI / 2);
+                const ny = Math.sin(bw.angle + Math.PI / 2);
+                const hw = bw.width / 2;
+                const pts = [
+                    { x: bw.x + nx * hw - camX, y: bw.y + ny * hw - camY },
+                    { x: bw.x - nx * hw - camX, y: bw.y - ny * hw - camY }
+                ];
+                this._drawNeonLine(pts, '#ff3366', 4);
+            }
         }
 
         _drawNeonLine(points, color, width) {
@@ -1114,6 +1161,29 @@
             }
         }
 
+        checkBackWallCollision() {
+            const bw = this.track.backWall;
+            if (!bw) return;
+            const arrow = this.arrow;
+            // The back wall is perpendicular to track direction at the cut point
+            // Check if arrow is behind the wall (on the deleted side)
+            const fwdX = Math.cos(bw.angle);
+            const fwdY = Math.sin(bw.angle);
+            const dx = arrow.x - bw.x;
+            const dy = arrow.y - bw.y;
+            const along = dx * fwdX + dy * fwdY;
+            // Also check lateral distance so it only triggers when near the wall
+            const nx = -fwdY;
+            const ny = fwdX;
+            const lateral = Math.abs(dx * nx + dy * ny);
+            if (along < 0 && lateral < bw.width / 2) {
+                this.particles.emit(bw.x, bw.y, 15, '#ff3366', 1.5, 3, 25);
+                this.audio.wallHit();
+                this.diedFromWall = true;
+                this.die();
+            }
+        }
+
         updatePlaying(dt60) {
             const dir = this.input.getDir();
             this.arrow.update(dir, dt60);
@@ -1123,6 +1193,10 @@
 
             // Wall collision
             this.checkWallCollision();
+            if (this.state !== STATE.PLAYING) return;
+
+            // Back wall collision (barrier at deleted track)
+            this.checkBackWallCollision();
             if (this.state !== STATE.PLAYING) return;
 
             // Distance tracking: convert segments to meters
