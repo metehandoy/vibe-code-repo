@@ -26,10 +26,11 @@
     // ============================================================
     const CFG = {
         ARROW_SPEED: 3.5,           // constant forward speed (pixels per frame at 60fps)
-        STEER_RATE: 0.025,          // how fast facing angle turns per frame when holding
-        STEER_MAX: 0.06,            // max steering angular velocity
+        STEER_RATE: 0.012,          // how fast facing angle turns per frame when holding (slower)
+        STEER_MAX: 0.04,            // max steering angular velocity (lower cap)
         GRIP: 0.03,                 // how fast velocity dir catches up to facing dir (low = more slide)
         REALIGN_RATE: 0.04,         // how fast facing returns to velocity dir on release
+        DRIFT_DRAG: 0.15,           // speed loss multiplier per unit of drift angle (energy to heat)
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
         TRACK_WIDTH: 120,           // starting track width
@@ -37,8 +38,8 @@
         SEGMENT_LENGTH: 12,         // distance between track spine points
         LOOK_AHEAD: 80,             // how many segments visible ahead
         LOOK_BEHIND: 15,            // segments visible behind
-        WALL_BOUNCE: 0.4,           // how much speed is retained on wall hit
-        WALL_PUSH: 8,              // how far arrow is pushed from wall
+        WALL_FORCE: 0.6,            // force pushing arrow away from wall
+        WALL_SLOW: 0.97,            // speed multiplier while touching wall
         SPEED_RECOVERY: 0.015,      // how fast speed recovers after wall hit
         COMBO_DECAY_TIME: 2000,     // ms before combo resets
         COMBO_PER_SEGMENT: 1,       // combo increment for clean segment pass
@@ -237,14 +238,18 @@
             this.driftAmount = Math.abs(angleDiff(this.facing, this.moveAngle));
             this.drifting = this.driftAmount > 0.05;
 
+            // Drift drag: more drift angle = more speed lost to "heat"
+            const dragFactor = 1 - this.driftAmount * CFG.DRIFT_DRAG;
+            this.speedMult = Math.max(0.3, this.speedMult * Math.pow(clamp(dragFactor, 0.9, 1), dt60));
+
             // Move along VELOCITY direction (not facing direction)
             const speed = CFG.ARROW_SPEED * this.speedMult * dt60;
             this.x += Math.cos(this.moveAngle) * speed;
             this.y += Math.sin(this.moveAngle) * speed;
             this.totalDistance += speed;
 
-            // Recover speed
-            if (this.speedMult < 1) {
+            // Recover speed when not drifting
+            if (this.speedMult < 1 && this.driftAmount < 0.05) {
                 this.speedMult = Math.min(1, this.speedMult + CFG.SPEED_RECOVERY * dt60);
             }
 
@@ -776,35 +781,38 @@
             const dy = arrow.y - seg.y;
             const cross = dx * nx + dy * ny; // signed distance from center
             const hw = seg.width / 2;
+            const penetration = Math.abs(cross) - (hw - CFG.ARROW_WIDTH * 0.3);
 
-            if (Math.abs(cross) > hw - CFG.ARROW_WIDTH * 0.3) {
-                // Wall hit!
+            if (penetration > 0) {
+                // Wall contact — apply force pushing arrow away from wall
                 const side = cross > 0 ? 1 : -1;
+                const pushStrength = CFG.WALL_FORCE * Math.min(penetration / 5, 1);
 
-                // Push arrow back inside
-                const pushTarget = (hw - CFG.ARROW_WIDTH * 0.5) * side;
-                arrow.x = seg.x + nx * pushTarget;
-                arrow.y = seg.y + ny * pushTarget;
+                // Push position away from wall
+                arrow.x -= nx * side * pushStrength * 2;
+                arrow.y -= ny * side * pushStrength * 2;
 
-                // Reflect movement angle away from wall
-                const wallAngle = seg.angle; // wall runs along track direction
-                const moveReflect = 2 * wallAngle - arrow.moveAngle + Math.PI;
-                arrow.moveAngle = normalizeAngle(moveReflect);
-                arrow.facing = arrow.moveAngle; // snap facing to new direction
-                arrow.steerVel *= -0.3;
+                // Slow down slightly while grinding wall
+                arrow.speedMult = Math.max(0.3, arrow.speedMult * CFG.WALL_SLOW);
+                arrow.wallHitTimer = 5;
 
-                // Speed penalty
-                arrow.speedMult = CFG.WALL_BOUNCE;
-                arrow.wallHitTimer = 15;
-
-                // Reset combo
+                // Reset combo on wall contact
                 this.combo = 0;
 
-                // Effects
-                const hitX = seg.x + nx * hw * side;
-                const hitY = seg.y + ny * hw * side;
-                this.particles.sparkWall(hitX, hitY);
-                this.audio.wallHit();
+                // Occasional spark particles (not every frame)
+                if (Math.random() < 0.3) {
+                    const hitX = seg.x + nx * hw * side;
+                    const hitY = seg.y + ny * hw * side;
+                    this.particles.emit(hitX, hitY, 2, '#ff3366', 0.8, 2, 12);
+                    this.audio.wallHit();
+                }
+
+                // Hard clamp: don't let arrow go past the wall
+                if (Math.abs(cross) > hw) {
+                    const clampTarget = (hw - 1) * side;
+                    arrow.x = seg.x + nx * clampTarget;
+                    arrow.y = seg.y + ny * clampTarget;
+                }
             }
 
             // Check if arrow is completely off track (game over)
