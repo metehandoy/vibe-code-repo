@@ -37,8 +37,8 @@
         TRACK_WIDTH: 130,
         MIN_TRACK_WIDTH: 55,
         SEGMENT_LENGTH: 12,
-        LOOK_AHEAD: 80,
-        LOOK_BEHIND: 60,
+        LOOK_AHEAD: 120,
+        LOOK_BEHIND: 100,
         WALL_SLOW: 0.95,
         SPEED_RECOVERY: 0.012,
         DIFFICULTY_RAMP: 0.00012,
@@ -1135,12 +1135,17 @@
             // Time flash decay
             if (this.timeFlash > 0) this.timeFlash -= dt60;
 
-            // Camera: follow arrow, centered, slightly ahead
-            const lookAheadDist = 80;
-            const targetCamX = this.arrow.x + Math.cos(this.arrow.angle) * lookAheadDist - this.canvas.width / 2;
-            const targetCamY = this.arrow.y + Math.sin(this.arrow.angle) * lookAheadDist - this.canvas.height / 2;
-            this.camX = lerp(this.camX, targetCamX, 0.08 * dt60);
-            this.camY = lerp(this.camY, targetCamY, 0.08 * dt60);
+            // Camera: follow arrow along MOVEMENT direction (not facing)
+            // Reduce look-ahead when slow/drifting to prevent dizzy spinning
+            const speedFactor = this.arrow.speedMult;
+            const lookAheadDist = 80 * speedFactor;
+            // Use moveAngle for camera so it doesn't swing with steering
+            const targetCamX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist - this.canvas.width / 2;
+            const targetCamY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist - this.canvas.height / 2;
+            // Slower camera lerp when drifting hard to reduce motion sickness
+            const camSpeed = this.arrow.drifting ? 0.04 : 0.07;
+            this.camX = lerp(this.camX, targetCamX, camSpeed * dt60);
+            this.camY = lerp(this.camY, targetCamY, camSpeed * dt60);
         }
 
         update(timestamp) {
