@@ -26,9 +26,10 @@
     // ============================================================
     const CFG = {
         ARROW_SPEED: 3.5,           // constant forward speed (pixels per frame at 60fps)
-        DRIFT_POWER: 0.045,         // how fast drift angle changes per frame when holding
-        DRIFT_DECAY: 0.92,          // how fast drift angle returns to 0 when released
-        MAX_DRIFT: 0.07,            // max drift angular velocity per frame
+        STEER_RATE: 0.025,          // how fast facing angle turns per frame when holding
+        STEER_MAX: 0.06,            // max steering angular velocity
+        GRIP: 0.03,                 // how fast velocity dir catches up to facing dir (low = more slide)
+        REALIGN_RATE: 0.04,         // how fast facing returns to velocity dir on release
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
         TRACK_WIDTH: 120,           // starting track width
@@ -172,46 +173,74 @@
     // ============================================================
     // ARROW (PLAYER)
     // ============================================================
+    // Normalize angle to [-PI, PI]
+    function normalizeAngle(a) {
+        while (a > Math.PI) a -= Math.PI * 2;
+        while (a < -Math.PI) a += Math.PI * 2;
+        return a;
+    }
+
+    // Shortest angular difference from a to b
+    function angleDiff(a, b) {
+        return normalizeAngle(b - a);
+    }
+
     class Arrow {
         constructor() { this.reset(0, 0); }
 
         reset(x, y) {
             this.x = x;
             this.y = y;
-            this.angle = -Math.PI / 2;  // facing up
-            this.driftVel = 0;           // angular velocity from drifting
-            this.speedMult = 1;          // 1 = full speed, reduced on wall hit
+            this.facing = -Math.PI / 2;   // where the arrow nose points
+            this.moveAngle = -Math.PI / 2; // actual velocity direction
+            this.steerVel = 0;             // current steering angular velocity
+            this.speedMult = 1;
             this.alive = true;
             this.totalDistance = 0;
             this.currentSegIdx = 0;
-            this.wallHitTimer = 0;       // for visual flash
-            this.drifting = false;       // currently in a drift?
-            this.driftTrail = [];        // [{x, y, age}]
+            this.wallHitTimer = 0;
+            this.drifting = false;
+            this.driftAmount = 0;          // how much we're sliding (for visuals)
+            this.driftTrail = [];
         }
 
         update(inputDir, dt60) {
-            // inputDir: -1 = left, 0 = none, +1 = right, can be fractional
+            // inputDir: -1 = left, 0 = none, +1 = right
+            // INVERTED: tap right -> arrow nose turns LEFT (counter-clockwise)
+            //           so the body drifts RIGHT (like counter-steering)
 
-            // Apply drift input
             if (inputDir !== 0) {
-                this.driftVel += inputDir * CFG.DRIFT_POWER * dt60;
-                this.driftVel = clamp(this.driftVel, -CFG.MAX_DRIFT, CFG.MAX_DRIFT);
-                this.drifting = true;
+                // Steer the facing angle (inverted direction)
+                this.steerVel += (-inputDir) * CFG.STEER_RATE * dt60;
+                this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
             } else {
-                this.driftVel *= Math.pow(CFG.DRIFT_DECAY, dt60);
-                if (Math.abs(this.driftVel) < 0.001) {
-                    this.driftVel = 0;
-                    this.drifting = false;
-                }
+                // Dampen steering velocity when not pressing
+                this.steerVel *= Math.pow(0.85, dt60);
+                if (Math.abs(this.steerVel) < 0.001) this.steerVel = 0;
             }
 
-            // Apply drift to angle
-            this.angle += this.driftVel * dt60;
+            // Apply steering to facing angle
+            this.facing += this.steerVel * dt60;
 
-            // Move forward
+            // When not pressing, gradually realign facing to movement direction
+            if (inputDir === 0) {
+                const diff = angleDiff(this.facing, this.moveAngle);
+                this.facing += diff * CFG.REALIGN_RATE * dt60;
+            }
+
+            // Movement: velocity direction slowly catches up to facing direction
+            // This is the core drift mechanic — low GRIP = more sliding
+            const diff = angleDiff(this.moveAngle, this.facing);
+            this.moveAngle += diff * CFG.GRIP * dt60;
+
+            // Calculate drift amount (angle between facing and movement)
+            this.driftAmount = Math.abs(angleDiff(this.facing, this.moveAngle));
+            this.drifting = this.driftAmount > 0.05;
+
+            // Move along VELOCITY direction (not facing direction)
             const speed = CFG.ARROW_SPEED * this.speedMult * dt60;
-            this.x += Math.cos(this.angle) * speed;
-            this.y += Math.sin(this.angle) * speed;
+            this.x += Math.cos(this.moveAngle) * speed;
+            this.y += Math.sin(this.moveAngle) * speed;
             this.totalDistance += speed;
 
             // Recover speed
@@ -222,13 +251,12 @@
             // Wall hit timer
             if (this.wallHitTimer > 0) this.wallHitTimer -= dt60;
 
-            // Drift trail
-            if (this.drifting && Math.abs(this.driftVel) > 0.01) {
-                const nx = Math.cos(this.angle + Math.PI / 2);
-                const ny = Math.sin(this.angle + Math.PI / 2);
-                // Emit from rear corners
-                const backX = this.x - Math.cos(this.angle) * CFG.ARROW_LENGTH * 0.4;
-                const backY = this.y - Math.sin(this.angle) * CFG.ARROW_LENGTH * 0.4;
+            // Drift trail — emit from rear when sliding
+            if (this.drifting) {
+                const backX = this.x - Math.cos(this.facing) * CFG.ARROW_LENGTH * 0.4;
+                const backY = this.y - Math.sin(this.facing) * CFG.ARROW_LENGTH * 0.4;
+                const nx = Math.cos(this.facing + Math.PI / 2);
+                const ny = Math.sin(this.facing + Math.PI / 2);
                 this.driftTrail.push({
                     x: backX + nx * CFG.ARROW_WIDTH * 0.4,
                     y: backY + ny * CFG.ARROW_WIDTH * 0.4,
@@ -249,6 +277,9 @@
                 }
             }
         }
+
+        // The angle used for rendering the arrow visual
+        get angle() { return this.facing; }
     }
 
     // ============================================================
@@ -520,7 +551,8 @@
             for (const t of arrow.driftTrail) {
                 const alpha = clamp(1 - t.age / 40, 0, 1) * 0.5;
                 ctx.globalAlpha = alpha;
-                const trailColor = arrow.driftVel > 0 ? '#ff00ff' : '#00ffff';
+                const slideDir = angleDiff(arrow.facing, arrow.moveAngle);
+                const trailColor = slideDir > 0 ? '#ff00ff' : '#00ffff';
                 ctx.fillStyle = trailColor;
                 ctx.fillRect(t.x - camX - 1.5, t.y - camY - 1.5, 3, 3);
             }
@@ -754,8 +786,12 @@
                 arrow.x = seg.x + nx * pushTarget;
                 arrow.y = seg.y + ny * pushTarget;
 
-                // Reflect drift velocity
-                arrow.driftVel = -arrow.driftVel * 0.3;
+                // Reflect movement angle away from wall
+                const wallAngle = seg.angle; // wall runs along track direction
+                const moveReflect = 2 * wallAngle - arrow.moveAngle + Math.PI;
+                arrow.moveAngle = normalizeAngle(moveReflect);
+                arrow.facing = arrow.moveAngle; // snap facing to new direction
+                arrow.steerVel *= -0.3;
 
                 // Speed penalty
                 arrow.speedMult = CFG.WALL_BOUNCE;
