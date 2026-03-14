@@ -26,24 +26,24 @@
     // ============================================================
     const CFG = {
         ARROW_SPEED: 3.5,           // constant forward speed (pixels per frame at 60fps)
-        STEER_RATE: 0.012,          // how fast facing angle turns per frame when holding (slower)
-        STEER_MAX: 0.04,            // max steering angular velocity (lower cap)
-        GRIP: 0.03,                 // how fast velocity dir catches up to facing dir (low = more slide)
+        STEER_RATE: 0.018,          // how fast facing angle turns per frame when holding (more responsive)
+        STEER_MAX: 0.06,            // max steering angular velocity (higher cap for snappy turns)
+        GRIP: 0.025,                // how fast velocity dir catches up to facing dir (low = more slide)
         REALIGN_RATE: 0.04,         // how fast facing returns to velocity dir on release
-        DRIFT_DRAG_EXP: 3.0,       // exponent for drift drag curve (higher = gentle start, harsh at high angle)
-        DRIFT_DRAG_SCALE: 0.008,    // overall drag intensity per frame
+        DRIFT_DRAG_EXP: 2.0,       // exponent for drift drag curve (lower = kicks in sooner)
+        DRIFT_DRAG_SCALE: 0.025,    // overall drag intensity per frame (much stronger)
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
-        TRACK_WIDTH: 120,           // starting track width
-        MIN_TRACK_WIDTH: 65,        // narrowest track gets
+        TRACK_WIDTH: 130,           // starting track width (wider start)
+        MIN_TRACK_WIDTH: 55,        // narrowest track gets (tighter squeeze)
         SEGMENT_LENGTH: 12,         // distance between track spine points
         LOOK_AHEAD: 80,             // how many segments visible ahead
         LOOK_BEHIND: 60,            // segments visible behind (increased to prevent pop-out)
         WALL_SLOW: 0.95,            // speed multiplier on wall hit
-        SPEED_RECOVERY: 0.015,      // how fast speed recovers after wall hit
+        SPEED_RECOVERY: 0.012,      // how fast speed recovers after wall hit (slower recovery)
         COMBO_DECAY_TIME: 2000,     // ms before combo resets
         COMBO_PER_SEGMENT: 1,       // combo increment for clean segment pass
-        DIFFICULTY_RAMP: 0.00008,   // how fast difficulty increases per segment
+        DIFFICULTY_RAMP: 0.00012,   // how fast difficulty increases per segment (faster ramp)
     };
 
     // ============================================================
@@ -94,37 +94,59 @@
             if (this.straightRemaining > 0) {
                 this.straightRemaining--;
                 // Gentle random wobble
-                this.currentAngle += (Math.random() - 0.5) * 0.01;
+                this.currentAngle += (Math.random() - 0.5) * 0.015;
             } else if (this.turnRemaining > 0) {
                 this.turnRemaining--;
-                const sharpness = 0.03 + this.difficulty * 0.05;
+                const sharpness = 0.035 + this.difficulty * 0.065;
                 this.currentAngle += this.turnDir * sharpness;
             } else {
-                // Decide next section
-                if (Math.random() < 0.4 + this.difficulty * 0.2) {
+                // Decide next section — heavily weighted toward turns
+                const turnChance = 0.55 + this.difficulty * 0.25;
+                if (Math.random() < turnChance) {
                     // Start a turn
                     this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                    this.turnRemaining = 8 + Math.floor(Math.random() * 20);
-                    // Occasionally create hairpins
-                    if (Math.random() < this.difficulty * 0.3) {
-                        this.turnRemaining = 25 + Math.floor(Math.random() * 15);
+                    // More varied turn lengths
+                    if (Math.random() < this.difficulty * 0.4) {
+                        // Hairpin / U-turn
+                        this.turnRemaining = 30 + Math.floor(Math.random() * 20);
+                    } else if (Math.random() < 0.3) {
+                        // Quick chicane — short turn then flip
+                        this.turnRemaining = 5 + Math.floor(Math.random() * 8);
+                    } else {
+                        // Normal curve
+                        this.turnRemaining = 10 + Math.floor(Math.random() * 18);
                     }
                 } else {
-                    // Straight section
-                    this.straightRemaining = 5 + Math.floor(Math.random() * 15 * (1 - this.difficulty * 0.5));
+                    // Straight section — shorter as difficulty rises
+                    this.straightRemaining = 3 + Math.floor(Math.random() * 10 * (1 - this.difficulty * 0.6));
                 }
             }
 
             this.lastX += Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
             this.lastY += Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
 
-            const trackW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty);
+            // Width varies: base shrinks with difficulty, plus local variation
+            const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty);
+            // Sinusoidal width pulsing + random jitter for organic feel
+            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 15;
+            const widthJitter = (Math.random() - 0.5) * 8;
+            // Narrow on sharp turns, wider on straights
+            const turnNarrow = this.turnRemaining > 0 ? -10 * this.difficulty : 5;
+            const trackW = clamp(baseW + widthPulse + widthJitter + turnNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
+
+            // Smooth width transitions
+            if (this.spine.length > 0) {
+                const prevW = this.spine[this.spine.length - 1].width;
+                var smoothW = lerp(prevW, trackW, 0.15);
+            } else {
+                var smoothW = trackW;
+            }
 
             this.spine.push({
                 x: this.lastX,
                 y: this.lastY,
                 angle: this.currentAngle,
-                width: trackW,
+                width: smoothW,
                 index: this.segmentIndex
             });
         }
