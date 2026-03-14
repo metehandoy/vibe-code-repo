@@ -31,11 +31,11 @@
         GRIP: 0.025,
         REALIGN_RATE: 0.04,
         DRIFT_DRAG_EXP: 2.0,
-        DRIFT_DRAG_SCALE: 0.025,
+        DRIFT_DRAG_SCALE: 0.008,
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
-        TRACK_WIDTH: 140,
-        MIN_TRACK_WIDTH: 32,
+        TRACK_WIDTH: 90,
+        MIN_TRACK_WIDTH: 28,
         SEGMENT_LENGTH: 12,
         LOOK_AHEAD: 120,
         LOOK_BEHIND: 100,
@@ -43,7 +43,7 @@
         SPEED_RECOVERY: 0.012,
         SPEED_RECOVERY_RELEASE: 0.06,
         DIFFICULTY_RAMP: 0.00012,
-        SELF_AVOID_DIST: 120,
+        SELF_AVOID_DIST: 250,
         METERS_PER_SEGMENT: 0.03,   // 1/100 scale — arrow ≈10cm, km takes very long
         // Timer
         START_TIME: 30,
@@ -153,22 +153,24 @@
         // Check if a candidate point is too close to existing (non-recent) spine segments
         _wouldOverlap(cx, cy) {
             const minDist = CFG.SELF_AVOID_DIST;
-            const recentThreshold = 40; // ignore the last N segments (they're adjacent)
+            const recentThreshold = 60; // ignore the last N segments (they're adjacent)
             const len = this.spine.length;
             if (len < recentThreshold) return null;
-            // Only check older segments (skip the most recent ones which are nearby by design)
             const checkEnd = len - recentThreshold;
-            for (let i = 0; i < checkEnd; i += 3) { // step by 3 for performance
+            let closestDist = Infinity;
+            let closestAngle = null;
+            // Check every segment for accuracy
+            for (let i = 0; i < checkEnd; i++) {
                 const s = this.spine[i];
                 const dx = cx - s.x;
                 const dy = cy - s.y;
                 const d2 = dx * dx + dy * dy;
-                if (d2 < minDist * minDist) {
-                    // Return the angle away from the conflicting segment
-                    return Math.atan2(cy - s.y, cx - s.x);
+                if (d2 < minDist * minDist && d2 < closestDist) {
+                    closestDist = d2;
+                    closestAngle = Math.atan2(dy, dx);
                 }
             }
-            return null;
+            return closestAngle;
         }
 
         generateNext() {
@@ -221,35 +223,43 @@
             let candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
 
             // Self-intersection avoidance: if candidate is too close to older track,
-            // steer away from the conflict
+            // steer hard away from the conflict
             const awayAngle = this._wouldOverlap(candX, candY);
             if (awayAngle !== null) {
-                // Blend current angle toward the "away" direction
                 const diff = normalizeAngle(awayAngle - this.currentAngle);
-                this.currentAngle += diff * 0.15; // steer 15% toward away direction
+                this.currentAngle += diff * 0.5; // steer 50% toward away direction
                 // Cancel current pattern to let avoidance take over
                 this.turnRemaining = 0;
-                this.straightRemaining = 0;
+                this.straightRemaining = 5; // brief straight to escape
                 // Recompute candidate
                 candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
                 candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+                // Double-check — if still overlapping, steer even harder
+                const awayAngle2 = this._wouldOverlap(candX, candY);
+                if (awayAngle2 !== null) {
+                    const diff2 = normalizeAngle(awayAngle2 - this.currentAngle);
+                    this.currentAngle += diff2 * 0.8;
+                    this.straightRemaining = 10;
+                    candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
+                    candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+                }
             }
 
             this.lastX = candX;
             this.lastY = candY;
 
-            // Dynamic width — much more variation, including very narrow passages
-            const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty);
-            const widthPulse = Math.sin(this.segmentIndex * 0.035) * 30;
-            const widthPulse2 = Math.sin(this.segmentIndex * 0.009) * 20; // slower wide swings
-            const widthJitter = (Math.random() - 0.5) * 10;
+            // Dynamic width — dramatic variation from very narrow to wide
+            const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty * 0.7);
+            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 25;
+            const widthPulse2 = Math.sin(this.segmentIndex * 0.012) * 15;
+            const widthJitter = (Math.random() - 0.5) * 8;
             let patternNarrow = 0;
             if (this.pattern === PATTERN.HAIRPIN || this.pattern === PATTERN.SPIRAL) {
-                patternNarrow = -35 * this.difficulty;
+                patternNarrow = -30 * (0.3 + this.difficulty);
             } else if (this.pattern === PATTERN.CHICANE || this.pattern === PATTERN.SLALOM) {
-                patternNarrow = -25 * this.difficulty;
+                patternNarrow = -20 * (0.3 + this.difficulty);
             } else if (this.pattern === PATTERN.STRAIGHT) {
-                patternNarrow = 12;
+                patternNarrow = 5;
             }
             const trackW = clamp(baseW + widthPulse + widthPulse2 + widthJitter + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
 
@@ -386,7 +396,7 @@
             // Drift drag: exponential curve — small drifts barely slow, big drifts drain hard
             // driftAmount is in radians, ~0.05 = tiny drift, ~1.0 = extreme sideways
             const dragLoss = Math.pow(this.driftAmount, CFG.DRIFT_DRAG_EXP) * CFG.DRIFT_DRAG_SCALE * dt60;
-            this.speedMult = Math.max(0.25, this.speedMult - dragLoss);
+            this.speedMult = Math.max(0.5, this.speedMult - dragLoss);
 
             // Move along VELOCITY direction (not facing direction)
             const speed = CFG.ARROW_SPEED * this.speedMult * dt60;
@@ -724,17 +734,57 @@
             g.gain.linearRampToValueAtTime(0, t + 0.15);
             o.start(t); o.stop(t + 0.15);
         }
-        drift() {
+        // Continuous drift hum — call startDrift/stopDrift to manage
+        startDrift() {
             if (!this._ensure()) return;
-            const o = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            o.connect(g); g.connect(this.ctx.destination);
-            o.type = 'sine';
-            const t = this.ctx.currentTime;
-            o.frequency.setValueAtTime(120, t);
-            g.gain.setValueAtTime(0.03, t);
-            g.gain.linearRampToValueAtTime(0, t + 0.1);
-            o.start(t); o.stop(t + 0.1);
+            if (this._driftNode) return; // already playing
+            const ctx = this.ctx;
+
+            // Soft filtered noise-like hum using detuned oscillators
+            const o1 = ctx.createOscillator();
+            const o2 = ctx.createOscillator();
+            const g = ctx.createGain();
+            const filter = ctx.createBiquadFilter();
+
+            o1.type = 'sine';
+            o2.type = 'triangle';
+            o1.frequency.setValueAtTime(85, ctx.currentTime);
+            o2.frequency.setValueAtTime(127, ctx.currentTime); // fifth above
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(300, ctx.currentTime);
+            filter.Q.setValueAtTime(5, ctx.currentTime);
+
+            o1.connect(filter);
+            o2.connect(filter);
+            filter.connect(g);
+            g.connect(ctx.destination);
+            g.gain.setValueAtTime(0, ctx.currentTime);
+            g.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 0.15);
+
+            o1.start();
+            o2.start();
+            this._driftNode = { o1, o2, g, filter };
+        }
+
+        updateDrift(driftAmount) {
+            if (!this._driftNode) return;
+            const ctx = this.ctx;
+            const n = this._driftNode;
+            // Modulate filter and volume with drift intensity
+            const intensity = clamp(driftAmount / 0.8, 0, 1);
+            n.filter.frequency.setTargetAtTime(200 + intensity * 600, ctx.currentTime, 0.05);
+            n.g.gain.setTargetAtTime(0.03 + intensity * 0.06, ctx.currentTime, 0.05);
+            n.o1.frequency.setTargetAtTime(75 + intensity * 60, ctx.currentTime, 0.1);
+        }
+
+        stopDrift() {
+            if (!this._driftNode) return;
+            const ctx = this.ctx;
+            const n = this._driftNode;
+            n.g.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+            const cleanup = () => { try { n.o1.stop(); n.o2.stop(); } catch(e){} };
+            setTimeout(cleanup, 300);
+            this._driftNode = null;
         }
         tokenCollect() {
             if (!this._ensure()) return;
@@ -1118,6 +1168,7 @@
 
         die() {
             this.state = STATE.GAME_OVER;
+            this.audio.stopDrift();
             if (this.timeLeft <= 0) this.deathCause = 'time';
             else if (this.diedFromWall) this.deathCause = 'wall';
             else this.deathCause = 'other';
@@ -1187,6 +1238,14 @@
         updatePlaying(dt60) {
             const dir = this.input.getDir();
             this.arrow.update(dir, dt60);
+
+            // Drift sound management
+            if (this.arrow.drifting && this.arrow.driftAmount > 0.1) {
+                this.audio.startDrift();
+                this.audio.updateDrift(this.arrow.driftAmount);
+            } else {
+                this.audio.stopDrift();
+            }
 
             // Update track
             this.track.update(this.arrow.currentSegIdx);
