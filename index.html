@@ -25,25 +25,27 @@
     // CONFIG
     // ============================================================
     const CFG = {
-        ARROW_SPEED: 3.5,           // constant forward speed (pixels per frame at 60fps)
-        STEER_RATE: 0.018,          // how fast facing angle turns per frame when holding (more responsive)
-        STEER_MAX: 0.06,            // max steering angular velocity (higher cap for snappy turns)
-        GRIP: 0.025,                // how fast velocity dir catches up to facing dir (low = more slide)
-        REALIGN_RATE: 0.04,         // how fast facing returns to velocity dir on release
-        DRIFT_DRAG_EXP: 2.0,       // exponent for drift drag curve (lower = kicks in sooner)
-        DRIFT_DRAG_SCALE: 0.025,    // overall drag intensity per frame (much stronger)
+        ARROW_SPEED: 3.5,
+        STEER_RATE: 0.018,
+        STEER_MAX: 0.06,
+        GRIP: 0.025,
+        REALIGN_RATE: 0.04,
+        DRIFT_DRAG_EXP: 2.0,
+        DRIFT_DRAG_SCALE: 0.025,
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
-        TRACK_WIDTH: 130,           // starting track width (wider start)
-        MIN_TRACK_WIDTH: 55,        // narrowest track gets (tighter squeeze)
-        SEGMENT_LENGTH: 12,         // distance between track spine points
-        LOOK_AHEAD: 80,             // how many segments visible ahead
-        LOOK_BEHIND: 60,            // segments visible behind (increased to prevent pop-out)
-        WALL_SLOW: 0.95,            // speed multiplier on wall hit
-        SPEED_RECOVERY: 0.012,      // how fast speed recovers after wall hit (slower recovery)
-        COMBO_DECAY_TIME: 2000,     // ms before combo resets
-        COMBO_PER_SEGMENT: 1,       // combo increment for clean segment pass
-        DIFFICULTY_RAMP: 0.00012,   // how fast difficulty increases per segment (faster ramp)
+        TRACK_WIDTH: 130,
+        MIN_TRACK_WIDTH: 55,
+        SEGMENT_LENGTH: 12,
+        LOOK_AHEAD: 80,
+        LOOK_BEHIND: 60,
+        WALL_SLOW: 0.95,
+        SPEED_RECOVERY: 0.012,
+        DIFFICULTY_RAMP: 0.00012,
+        // Timer
+        START_TIME: 30,             // seconds on clock at start
+        TIME_TOKEN_VALUE: 3.5,      // seconds added per token
+        TOKEN_RADIUS: 10,           // visual size of time token
     };
 
     // ============================================================
@@ -56,18 +58,25 @@
     // ============================================================
     // PROCEDURAL TRACK
     // ============================================================
+    // Track pattern types for variety
+    const PATTERN = {
+        STRAIGHT: 0, CURVE: 1, CHICANE: 2, HAIRPIN: 3, SPIRAL: 4, SLALOM: 5
+    };
+
     class Track {
         constructor() {
-            this.spine = [];       // center points [{x, y, angle}]
+            this.spine = [];
             this.difficulty = 0;
-            this.currentAngle = -Math.PI / 2; // start going up
+            this.currentAngle = -Math.PI / 2;
             this.segmentIndex = 0;
             this.lastX = 0;
             this.lastY = 0;
-            this.turnBudget = 0;   // for generating smooth curves
             this.turnDir = 0;
             this.turnRemaining = 0;
             this.straightRemaining = 0;
+            this.pattern = PATTERN.STRAIGHT;
+            this.patternStep = 0;
+            this.patternData = {};
         }
 
         init(startX, startY) {
@@ -77,12 +86,63 @@
             this.spine = [];
             this.segmentIndex = 0;
             this.difficulty = 0;
-            this.straightRemaining = 20; // start with a straight section
+            this.straightRemaining = 20;
             this.turnRemaining = 0;
+            this.pattern = PATTERN.STRAIGHT;
+            this.patternStep = 0;
 
-            // Generate initial segments
             for (let i = 0; i < CFG.LOOK_AHEAD + CFG.LOOK_BEHIND + 20; i++) {
                 this.generateNext();
+            }
+        }
+
+        _pickPattern() {
+            const d = this.difficulty;
+            const r = Math.random();
+            if (r < 0.08) {
+                // Short straight breather
+                this.pattern = PATTERN.STRAIGHT;
+                this.straightRemaining = 3 + Math.floor(Math.random() * 6 * (1 - d * 0.5));
+            } else if (r < 0.28) {
+                // S-curve chicane: alternating sharp turns
+                this.pattern = PATTERN.CHICANE;
+                this.patternData = {
+                    turns: 2 + Math.floor(Math.random() * 3 + d * 2), // 2-6 alternations
+                    segsPerTurn: 6 + Math.floor(Math.random() * 8),
+                    sharpness: 0.05 + d * 0.06,
+                };
+                this.turnDir = Math.random() < 0.5 ? -1 : 1;
+                this.turnRemaining = this.patternData.segsPerTurn;
+                this.patternStep = 0;
+            } else if (r < 0.48) {
+                // Hairpin: very tight U-turn
+                this.pattern = PATTERN.HAIRPIN;
+                this.turnDir = Math.random() < 0.5 ? -1 : 1;
+                this.turnRemaining = 20 + Math.floor(Math.random() * 25);
+                this.patternData = { sharpness: 0.06 + d * 0.07 };
+            } else if (r < 0.65 && d > 0.2) {
+                // Spiral: sustained turning that tightens
+                this.pattern = PATTERN.SPIRAL;
+                this.turnDir = Math.random() < 0.5 ? -1 : 1;
+                this.turnRemaining = 35 + Math.floor(Math.random() * 30);
+                this.patternData = { baseSharp: 0.03, ramp: 0.0015 + d * 0.002 };
+                this.patternStep = 0;
+            } else if (r < 0.82 && d > 0.15) {
+                // Slalom: rapid small wiggles
+                this.pattern = PATTERN.SLALOM;
+                this.patternData = {
+                    freq: 0.15 + Math.random() * 0.1,
+                    amp: 0.04 + d * 0.05,
+                    length: 20 + Math.floor(Math.random() * 25),
+                };
+                this.turnRemaining = this.patternData.length;
+                this.patternStep = 0;
+            } else {
+                // Normal curve
+                this.pattern = PATTERN.CURVE;
+                this.turnDir = Math.random() < 0.5 ? -1 : 1;
+                this.turnRemaining = 10 + Math.floor(Math.random() * 18);
+                this.patternData = { sharpness: 0.04 + d * 0.055 };
             }
         }
 
@@ -90,56 +150,69 @@
             this.segmentIndex++;
             this.difficulty = Math.min(1, this.segmentIndex * CFG.DIFFICULTY_RAMP);
 
-            // Decide turn behavior
             if (this.straightRemaining > 0) {
                 this.straightRemaining--;
-                // Gentle random wobble
-                this.currentAngle += (Math.random() - 0.5) * 0.015;
+                this.currentAngle += (Math.random() - 0.5) * 0.01;
             } else if (this.turnRemaining > 0) {
                 this.turnRemaining--;
-                const sharpness = 0.035 + this.difficulty * 0.065;
-                this.currentAngle += this.turnDir * sharpness;
-            } else {
-                // Decide next section — heavily weighted toward turns
-                const turnChance = 0.55 + this.difficulty * 0.25;
-                if (Math.random() < turnChance) {
-                    // Start a turn
-                    this.turnDir = Math.random() < 0.5 ? -1 : 1;
-                    // More varied turn lengths
-                    if (Math.random() < this.difficulty * 0.4) {
-                        // Hairpin / U-turn
-                        this.turnRemaining = 30 + Math.floor(Math.random() * 20);
-                    } else if (Math.random() < 0.3) {
-                        // Quick chicane — short turn then flip
-                        this.turnRemaining = 5 + Math.floor(Math.random() * 8);
-                    } else {
-                        // Normal curve
-                        this.turnRemaining = 10 + Math.floor(Math.random() * 18);
+                this.patternStep++;
+
+                switch (this.pattern) {
+                    case PATTERN.CURVE:
+                        this.currentAngle += this.turnDir * this.patternData.sharpness;
+                        break;
+                    case PATTERN.CHICANE:
+                        this.currentAngle += this.turnDir * this.patternData.sharpness;
+                        if (this.turnRemaining <= 0 && this.patternStep < this.patternData.turns) {
+                            this.turnDir *= -1;
+                            this.turnRemaining = this.patternData.segsPerTurn;
+                            this.patternStep++;
+                        }
+                        break;
+                    case PATTERN.HAIRPIN:
+                        this.currentAngle += this.turnDir * this.patternData.sharpness;
+                        break;
+                    case PATTERN.SPIRAL: {
+                        const sharp = this.patternData.baseSharp + this.patternStep * this.patternData.ramp;
+                        this.currentAngle += this.turnDir * Math.min(sharp, 0.12);
+                        break;
                     }
-                } else {
-                    // Straight section — shorter as difficulty rises
-                    this.straightRemaining = 3 + Math.floor(Math.random() * 10 * (1 - this.difficulty * 0.6));
+                    case PATTERN.SLALOM: {
+                        const wave = Math.sin(this.patternStep * this.patternData.freq) * this.patternData.amp;
+                        this.currentAngle += wave;
+                        break;
+                    }
                 }
+
+                // When pattern ends, immediately pick next
+                if (this.turnRemaining <= 0 && this.pattern !== PATTERN.CHICANE) {
+                    this._pickPattern();
+                }
+            } else {
+                this._pickPattern();
             }
 
             this.lastX += Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
             this.lastY += Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
 
-            // Width varies: base shrinks with difficulty, plus local variation
+            // Dynamic width
             const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty);
-            // Sinusoidal width pulsing + random jitter for organic feel
-            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 15;
-            const widthJitter = (Math.random() - 0.5) * 8;
-            // Narrow on sharp turns, wider on straights
-            const turnNarrow = this.turnRemaining > 0 ? -10 * this.difficulty : 5;
-            const trackW = clamp(baseW + widthPulse + widthJitter + turnNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
+            const widthPulse = Math.sin(this.segmentIndex * 0.035) * 18;
+            const widthJitter = (Math.random() - 0.5) * 6;
+            // Narrow heavily on sharp patterns, widen on straights
+            let patternNarrow = 0;
+            if (this.pattern === PATTERN.HAIRPIN || this.pattern === PATTERN.SPIRAL) {
+                patternNarrow = -18 * this.difficulty;
+            } else if (this.pattern === PATTERN.CHICANE || this.pattern === PATTERN.SLALOM) {
+                patternNarrow = -10 * this.difficulty;
+            } else if (this.pattern === PATTERN.STRAIGHT) {
+                patternNarrow = 8;
+            }
+            const trackW = clamp(baseW + widthPulse + widthJitter + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
 
-            // Smooth width transitions
+            let smoothW = trackW;
             if (this.spine.length > 0) {
-                const prevW = this.spine[this.spine.length - 1].width;
-                var smoothW = lerp(prevW, trackW, 0.15);
-            } else {
-                var smoothW = trackW;
+                smoothW = lerp(this.spine[this.spine.length - 1].width, trackW, 0.12);
             }
 
             this.spine.push({
@@ -359,6 +432,126 @@
     }
 
     // ============================================================
+    // TIME TOKENS
+    // ============================================================
+    class TimeTokenManager {
+        constructor() {
+            this.tokens = [];  // {x, y, segIdx, collected, pulse}
+            this.lastSpawnSeg = 0;
+            this.collectFlash = 0;
+        }
+
+        reset() {
+            this.tokens = [];
+            this.lastSpawnSeg = 0;
+            this.collectFlash = 0;
+        }
+
+        // Strategically spawn tokens based on distance and difficulty
+        // Key insight: spawn rate adapts so the player can survive if they're
+        // good, but can't accumulate infinite time
+        trySpawn(track, arrowSegIdx, difficulty, timeLeft) {
+            // Base interval: every ~40 segments, decreasing slightly with difficulty
+            // but also adapts to how much time the player has left
+            const baseInterval = 35 - difficulty * 8; // 35 at start, 27 at max difficulty
+
+            // If player is low on time, spawn slightly more often (mercy)
+            // If player has lots of time, spawn less often (prevent hoarding)
+            let urgencyMod = 0;
+            if (timeLeft < 8) urgencyMod = -8;       // spawn sooner when desperate
+            else if (timeLeft < 15) urgencyMod = -3;  // gentle boost
+            else if (timeLeft > 25) urgencyMod = 10;  // slow down spawns when comfortable
+            else if (timeLeft > 35) urgencyMod = 20;  // really slow if hoarding
+
+            const interval = Math.max(15, baseInterval + urgencyMod);
+
+            if (arrowSegIdx - this.lastSpawnSeg >= interval) {
+                // Place token ahead on the track center with slight offset
+                const spawnAhead = 25 + Math.floor(Math.random() * 30);
+                const targetIdx = arrowSegIdx + spawnAhead;
+                const seg = track.getSegment(targetIdx);
+                if (seg) {
+                    // Offset from center so player has to navigate to it
+                    const nx = Math.cos(seg.angle + Math.PI / 2);
+                    const ny = Math.sin(seg.angle + Math.PI / 2);
+                    const offset = (Math.random() - 0.5) * seg.width * 0.5;
+                    this.tokens.push({
+                        x: seg.x + nx * offset,
+                        y: seg.y + ny * offset,
+                        segIdx: targetIdx,
+                        collected: false,
+                        pulse: Math.random() * Math.PI * 2
+                    });
+                    this.lastSpawnSeg = arrowSegIdx;
+                }
+            }
+
+            // Cull tokens far behind
+            this.tokens = this.tokens.filter(t => t.segIdx > arrowSegIdx - 10);
+        }
+
+        // Check if arrow collects any tokens
+        checkCollect(arrowX, arrowY) {
+            let timeGained = 0;
+            for (const t of this.tokens) {
+                if (t.collected) continue;
+                const d = dist(arrowX, arrowY, t.x, t.y);
+                if (d < CFG.TOKEN_RADIUS + CFG.ARROW_LENGTH * 0.5) {
+                    t.collected = true;
+                    timeGained += CFG.TIME_TOKEN_VALUE;
+                    this.collectFlash = 20;
+                }
+            }
+            return timeGained;
+        }
+
+        update(dt60) {
+            if (this.collectFlash > 0) this.collectFlash -= dt60;
+        }
+
+        render(ctx, camX, camY) {
+            const now = Date.now() / 1000;
+            for (const t of this.tokens) {
+                if (t.collected) continue;
+                const sx = t.x - camX;
+                const sy = t.y - camY;
+                const pulse = 0.8 + 0.2 * Math.sin(now * 4 + t.pulse);
+                const r = CFG.TOKEN_RADIUS * pulse;
+
+                // Outer glow
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 160, 0.1)';
+                ctx.fill();
+
+                // Inner glow
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 160, 0.2)';
+                ctx.fill();
+
+                // Core
+                ctx.beginPath();
+                ctx.arc(sx, sy, r, 0, Math.PI * 2);
+                ctx.fillStyle = '#00ffa0';
+                ctx.shadowColor = '#00ffa0';
+                ctx.shadowBlur = 15;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // "+" symbol
+                ctx.fillStyle = '#003320';
+                ctx.font = 'bold ' + Math.floor(r * 1.2) + 'px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('+', sx, sy + 1);
+                ctx.textBaseline = 'alphabetic';
+                ctx.textAlign = 'left';
+            }
+        }
+    }
+
+    // ============================================================
     // INPUT
     // ============================================================
     class InputManager {
@@ -484,6 +677,19 @@
             g.gain.setValueAtTime(0.03, t);
             g.gain.linearRampToValueAtTime(0, t + 0.1);
             o.start(t); o.stop(t + 0.1);
+        }
+        tokenCollect() {
+            if (!this._ensure()) return;
+            const o = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            o.connect(g); g.connect(this.ctx.destination);
+            o.type = 'sine';
+            const t = this.ctx.currentTime;
+            o.frequency.setValueAtTime(600, t);
+            o.frequency.linearRampToValueAtTime(1200, t + 0.1);
+            g.gain.setValueAtTime(0.25, t);
+            g.gain.linearRampToValueAtTime(0, t + 0.2);
+            o.start(t); o.stop(t + 0.2);
         }
     }
 
@@ -627,7 +833,7 @@
             ctx.restore();
         }
 
-        drawHUD(score, combo, highScore, speedMult, canvasW) {
+        drawHUD(score, timeLeft, highScore, speedMult, canvasW, timeFlash) {
             const ctx = this.ctx;
 
             // Score
@@ -641,21 +847,48 @@
             ctx.fillStyle = 'rgba(255,255,255,0.4)';
             ctx.fillText('BEST: ' + highScore, 15, 55);
 
-            // Combo
-            if (combo > 1) {
-                ctx.textAlign = 'right';
-                ctx.font = 'bold 20px monospace';
-                const comboAlpha = Math.min(1, combo / 10);
-                ctx.fillStyle = 'rgba(255, 255, 0, ' + (0.5 + comboAlpha * 0.5) + ')';
-                ctx.fillText('x' + combo + ' COMBO', canvasW - 15, 35);
+            // Timer — centered, prominent
+            const timeStr = timeLeft.toFixed(1);
+            ctx.textAlign = 'center';
+            const isLow = timeLeft < 8;
+            const isCritical = timeLeft < 4;
+
+            if (timeFlash > 0) {
+                // Flash green when collecting token
+                ctx.shadowColor = '#00ffa0';
+                ctx.shadowBlur = 20;
+                ctx.fillStyle = '#00ffa0';
+                ctx.font = 'bold 32px monospace';
+            } else if (isCritical) {
+                // Pulsing red when critical
+                const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 150);
+                ctx.shadowColor = '#ff3366';
+                ctx.shadowBlur = 15 * pulse;
+                ctx.fillStyle = '#ff3366';
+                ctx.font = 'bold 34px monospace';
+            } else if (isLow) {
+                ctx.shadowColor = '#ffaa00';
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = '#ffaa00';
+                ctx.font = 'bold 28px monospace';
+            } else {
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 26px monospace';
             }
+            ctx.fillText(timeStr, canvasW / 2, 35);
+            ctx.shadowBlur = 0;
+
+            // Small label
+            ctx.font = '11px monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            ctx.fillText('TIME', canvasW / 2, 50);
 
             // Speed indicator
             if (speedMult < 0.9) {
-                ctx.textAlign = 'center';
                 ctx.font = 'bold 14px monospace';
                 ctx.fillStyle = '#ff3366';
-                ctx.fillText('SLOW', canvasW / 2, 30);
+                ctx.fillText('SLOW', canvasW / 2, 70);
             }
 
             ctx.textAlign = 'left';
@@ -678,7 +911,11 @@
 
             ctx.fillStyle = 'rgba(255,255,255,0.6)';
             ctx.font = '16px monospace';
-            ctx.fillText('Tap left/right to drift', canvasW / 2, canvasH / 2 + 45);
+            ctx.fillText('Tap left/right to drift', canvasW / 2, canvasH / 2 + 40);
+
+            ctx.fillStyle = 'rgba(0,255,160,0.5)';
+            ctx.font = '13px monospace';
+            ctx.fillText('Collect + tokens to stay alive', canvasW / 2, canvasH / 2 + 60);
 
             const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
             ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + pulse * 0.6) + ')';
@@ -694,18 +931,19 @@
             ctx.textAlign = 'left';
         }
 
-        drawGameOver(canvasW, canvasH, score, highScore, isNewHigh) {
+        drawGameOver(canvasW, canvasH, score, highScore, isNewHigh, diedFromTimer) {
             const ctx = this.ctx;
             ctx.fillStyle = 'rgba(10, 0, 20, 0.7)';
             ctx.fillRect(0, 0, canvasW, canvasH);
 
             ctx.textAlign = 'center';
 
+            const deathText = diedFromTimer ? 'TIME UP' : 'WRECKED';
             ctx.shadowColor = '#ff3366';
             ctx.shadowBlur = 20;
             ctx.fillStyle = '#ff3366';
             ctx.font = 'bold 40px monospace';
-            ctx.fillText('WRECKED', canvasW / 2, canvasH / 2 - 50);
+            ctx.fillText(deathText, canvasW / 2, canvasH / 2 - 50);
             ctx.shadowBlur = 0;
 
             ctx.fillStyle = '#ffffff';
@@ -745,19 +983,19 @@
             this.particles = new Particles();
             this.track = new Track();
             this.arrow = new Arrow();
+            this.tokens = new TimeTokenManager();
             this.state = STATE.MENU;
             this.highScore = parseInt(localStorage.getItem('driftArrowHigh') || '0', 10);
             this.score = 0;
-            this.combo = 0;
-            this.lastComboTime = 0;
+            this.timeLeft = 0;          // countdown timer in seconds
             this.isNewHigh = false;
             this.gameOverDelay = 0;
             this.lastSegPassed = 0;
             this.lastTime = 0;
             this.camX = 0;
             this.camY = 0;
-            // How far arrow can stray from track before game over
             this.maxOffTrack = 300;
+            this.timeFlash = 0;         // visual flash when collecting token
 
             this.renderer.resize();
             window.addEventListener('resize', () => this.renderer.resize());
@@ -769,18 +1007,20 @@
             const cy = this.canvas.height / 2 + 100;
             this.track.init(cx, cy);
             this.arrow.reset(cx, cy);
+            this.tokens.reset();
             this.score = 0;
-            this.combo = 0;
-            this.lastComboTime = 0;
+            this.timeLeft = CFG.START_TIME;
             this.isNewHigh = false;
             this.gameOverDelay = 0;
             this.lastSegPassed = 0;
+            this.timeFlash = 0;
             this.state = STATE.PLAYING;
         }
 
         die() {
             this.state = STATE.GAME_OVER;
-            this.gameOverDelay = 60; // frames
+            this.diedFromTimer = this.timeLeft <= 0;
+            this.gameOverDelay = 60;
             this.particles.emit(this.arrow.x, this.arrow.y, 30, '#ff3366', 1.5, 4, 40);
             this.particles.emit(this.arrow.x, this.arrow.y, 20, '#ffee00', 1, 3, 30);
 
@@ -835,9 +1075,6 @@
                     arrow.speedMult = Math.max(0.25, arrow.speedMult * CFG.WALL_SLOW);
                     arrow.wallHitTimer = 10;
 
-                    // Reset combo
-                    this.combo = 0;
-
                     // Spark particles
                     const hitX = seg.x + nx * hw * side;
                     const hitY = seg.y + ny * hw * side;
@@ -869,28 +1106,34 @@
             if (seg && seg.index > this.lastSegPassed) {
                 const segsPassed = seg.index - this.lastSegPassed;
                 this.lastSegPassed = seg.index;
-
-                // Combo tracking
-                const now = Date.now();
-                if (now - this.lastComboTime < CFG.COMBO_DECAY_TIME) {
-                    this.combo += segsPassed;
-                } else {
-                    this.combo = segsPassed;
-                }
-                this.lastComboTime = now;
-
-                // Score with combo multiplier
-                const multiplier = 1 + Math.floor(this.combo / 10) * 0.5;
-                this.score += Math.floor(segsPassed * multiplier);
+                this.score += segsPassed;
             }
 
-            // Combo decay
-            if (Date.now() - this.lastComboTime > CFG.COMBO_DECAY_TIME) {
-                this.combo = 0;
+            // Countdown timer
+            const dtSec = dt60 * 16.67 / 1000;
+            this.timeLeft -= dtSec;
+            if (this.timeLeft <= 0) {
+                this.timeLeft = 0;
+                this.die();
+                return;
             }
+
+            // Time tokens: spawn and collect
+            this.tokens.trySpawn(this.track, this.arrow.currentSegIdx, this.track.difficulty, this.timeLeft);
+            const gained = this.tokens.checkCollect(this.arrow.x, this.arrow.y);
+            if (gained > 0) {
+                this.timeLeft += gained;
+                this.timeFlash = 30;
+                this.audio.tokenCollect();
+                this.particles.emit(this.arrow.x, this.arrow.y, 12, '#00ffa0', 1.2, 3, 20);
+            }
+            this.tokens.update(dt60);
 
             // Particles
             this.particles.update(dt60);
+
+            // Time flash decay
+            if (this.timeFlash > 0) this.timeFlash -= dt60;
 
             // Camera: follow arrow, centered, slightly ahead
             const lookAheadDist = 80;
@@ -936,6 +1179,9 @@
             // Draw track
             this.renderer.drawTrack(this.track, this.camX, this.camY);
 
+            // Draw time tokens
+            this.tokens.render(this.renderer.ctx, this.camX, this.camY);
+
             // Draw particles
             this.particles.render(this.renderer.ctx, this.camX, this.camY);
 
@@ -946,12 +1192,12 @@
 
             // HUD
             if (this.state === STATE.PLAYING) {
-                this.renderer.drawHUD(this.score, this.combo, this.highScore, this.arrow.speedMult, w);
+                this.renderer.drawHUD(this.score, this.timeLeft, this.highScore, this.arrow.speedMult, w, this.timeFlash);
             }
 
             if (this.state === STATE.GAME_OVER) {
                 // Still show track and particles
-                this.renderer.drawGameOver(w, h, this.score, this.highScore, this.isNewHigh);
+                this.renderer.drawGameOver(w, h, this.score, this.highScore, this.isNewHigh, this.diedFromTimer);
             }
         }
 
