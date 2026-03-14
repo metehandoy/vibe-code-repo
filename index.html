@@ -7,35 +7,866 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Gravity Shift</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #000;
-            touch-action: none;
-            -webkit-touch-callout: none;
-            -webkit-user-select: none;
-            user-select: none;
+            width: 100%; height: 100%; overflow: hidden;
+            background: #000; touch-action: none;
+            -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
         }
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
+        canvas { display: block; width: 100%; height: 100%; }
     </style>
 </head>
 <body>
     <canvas id="game"></canvas>
-    <script type="module">
-        import { Game } from './js/game.js';
-        const canvas = document.getElementById('game');
-        const game = new Game(canvas);
-        game.start();
+    <script>
+    // ============================================================
+    // utils.js — Shared math and collision helpers
+    // ============================================================
+    function clamp(val, min, max) {
+        return Math.max(min, Math.min(max, val));
+    }
+    function lerp(a, b, t) {
+        return a + (b - a) * t;
+    }
+    function easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+    function rectOverlap(a, b) {
+        return a.x < b.x + b.w && a.x + a.w > b.x &&
+               a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+    function randomRange(min, max) {
+        return min + Math.random() * (max - min);
+    }
+    function randomInt(min, max) {
+        return Math.floor(randomRange(min, max + 1));
+    }
+    function randomChoice(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    // ============================================================
+    // input.js — Touch and keyboard input handling
+    // ============================================================
+    class Input {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.tapped = false;
+            const onTap = (e) => { e.preventDefault(); this.tapped = true; };
+            canvas.addEventListener('touchstart', onTap, { passive: false });
+            canvas.addEventListener('mousedown', onTap);
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+                    e.preventDefault(); this.tapped = true;
+                }
+            });
+            document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        }
+        consume() {
+            const was = this.tapped;
+            this.tapped = false;
+            return was;
+        }
+    }
+
+    // ============================================================
+    // particles.js — Pool-based particle system
+    // ============================================================
+    const MAX_PARTICLES = 300;
+
+    class Particle {
+        constructor() {
+            this.active = false;
+            this.x = 0; this.y = 0; this.vx = 0; this.vy = 0;
+            this.life = 0; this.maxLife = 0; this.size = 0;
+            this.color = ''; this.shrink = true;
+        }
+        reset(x, y, vx, vy, life, size, color, shrink) {
+            this.active = true;
+            this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+            this.life = life; this.maxLife = life; this.size = size;
+            this.color = color; this.shrink = shrink !== false;
+        }
+        update(dt) {
+            if (!this.active) return;
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.vy += 200 * dt;
+            this.life -= dt;
+            if (this.life <= 0) this.active = false;
+        }
+    }
+
+    class ParticleSystem {
+        constructor() {
+            this.pool = [];
+            for (let i = 0; i < MAX_PARTICLES; i++) this.pool.push(new Particle());
+        }
+        _get() {
+            for (const p of this.pool) if (!p.active) return p;
+            return null;
+        }
+        emit(x, y, count, cfg) {
+            for (let i = 0; i < count; i++) {
+                const p = this._get();
+                if (!p) return;
+                const angle = cfg.angleBase + (Math.random() - 0.5) * cfg.angleSpread;
+                const speed = cfg.speedMin + Math.random() * (cfg.speedMax - cfg.speedMin);
+                p.reset(
+                    x + (Math.random() - 0.5) * (cfg.offsetX || 0),
+                    y + (Math.random() - 0.5) * (cfg.offsetY || 0),
+                    Math.cos(angle) * speed, Math.sin(angle) * speed,
+                    cfg.life + Math.random() * (cfg.lifeVar || 0),
+                    cfg.size + Math.random() * (cfg.sizeVar || 0),
+                    cfg.colors[Math.floor(Math.random() * cfg.colors.length)],
+                    cfg.shrink
+                );
+            }
+        }
+        burstStar(x, y) {
+            this.emit(x, y, 10, {
+                angleBase: 0, angleSpread: Math.PI * 2,
+                speedMin: 80, speedMax: 200, life: 0.4, lifeVar: 0.2,
+                size: 3, sizeVar: 2,
+                colors: ['#FFD700', '#FFA500', '#FFEC8B', '#FFFFFF'], shrink: true
+            });
+        }
+        burstDeath(x, y) {
+            this.emit(x, y, 25, {
+                angleBase: 0, angleSpread: Math.PI * 2,
+                speedMin: 100, speedMax: 300, life: 0.6, lifeVar: 0.3,
+                size: 4, sizeVar: 3,
+                colors: ['#FF4444', '#FF6644', '#FF8844', '#FFAA44'], shrink: true
+            });
+        }
+        trail(x, y, color) {
+            this.emit(x, y, 1, {
+                angleBase: Math.PI, angleSpread: 0.5,
+                speedMin: 10, speedMax: 40, life: 0.3, lifeVar: 0.1,
+                size: 2, sizeVar: 1, colors: [color], shrink: true
+            });
+        }
+        update(dt) { for (const p of this.pool) p.update(dt); }
+        render(ctx) {
+            for (const p of this.pool) {
+                if (!p.active) continue;
+                const alpha = p.life / p.maxLife;
+                const size = p.shrink ? p.size * alpha : p.size;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
+            }
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // ============================================================
+    // audio.js — Web Audio API synthesized sound effects
+    // ============================================================
+    class GameAudio {
+        constructor() { this.ctx = null; this.enabled = true; }
+        init() {
+            try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+            catch (e) { this.enabled = false; }
+        }
+        _ensureCtx() {
+            if (!this.ctx) this.init();
+            if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+            return this.enabled && this.ctx;
+        }
+        flipGravity(direction) {
+            if (!this._ensureCtx()) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'sine';
+            const now = this.ctx.currentTime;
+            if (direction > 0) {
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.linearRampToValueAtTime(300, now + 0.1);
+            } else {
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(600, now + 0.1);
+            }
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.1);
+            osc.start(now); osc.stop(now + 0.1);
+        }
+        collectStar() {
+            if (!this._ensureCtx()) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'sine';
+            const now = this.ctx.currentTime;
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.linearRampToValueAtTime(1320, now + 0.1);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.15);
+            osc.start(now); osc.stop(now + 0.15);
+        }
+        death() {
+            if (!this._ensureCtx()) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'sawtooth';
+            const now = this.ctx.currentTime;
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.linearRampToValueAtTime(50, now + 0.4);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.4);
+            osc.start(now); osc.stop(now + 0.4);
+        }
+        rotate() {
+            if (!this._ensureCtx()) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'triangle';
+            const now = this.ctx.currentTime;
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.linearRampToValueAtTime(800, now + 0.8);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0, now + 1.0);
+            osc.start(now); osc.stop(now + 1.0);
+        }
+    }
+
+    // ============================================================
+    // player.js — Player entity with gravity, movement, collision
+    // ============================================================
+    const PLAYER_SIZE = 20;
+    const GRAVITY = 900;
+    const MAX_FALL_SPEED = 600;
+    const FLIP_COOLDOWN = 0.15;
+    const BASE_SPEED = 180;
+    const SPEED_INCREASE = 0.5;
+
+    class Player {
+        constructor(x, y) {
+            this.x = x; this.y = y;
+            this.w = PLAYER_SIZE; this.h = PLAYER_SIZE;
+            this.vx = BASE_SPEED; this.vy = 0;
+            this.gravityDir = 1;
+            this.flipCooldown = 0;
+            this.alive = true;
+            this.distance = 0;
+            this.squash = 1;
+            this.color = '#00E5FF';
+            this.trailTimer = 0;
+        }
+        get speed() { return BASE_SPEED + this.distance * SPEED_INCREASE * 0.01; }
+        flipGravity() {
+            if (this.flipCooldown > 0) return false;
+            this.gravityDir *= -1;
+            this.vy = 0;
+            this.flipCooldown = FLIP_COOLDOWN;
+            this.squash = 0.5;
+            return true;
+        }
+        update(dt, worldRotation) {
+            if (!this.alive) return;
+            this.flipCooldown = Math.max(0, this.flipCooldown - dt);
+            this.squash += (1 - this.squash) * 10 * dt;
+            const rotSteps = Math.round(worldRotation / (Math.PI / 2)) % 4;
+            const speed = this.speed;
+            switch (rotSteps) {
+                case 0: this.vx = speed; break;
+                case 1: this.vx = 0; this.vy = speed * this.gravityDir; break;
+                case 2: this.vx = -speed; break;
+                case 3: this.vx = 0; this.vy = -speed * this.gravityDir; break;
+            }
+            let gx = 0, gy = 0;
+            switch (rotSteps) {
+                case 0: gy = GRAVITY * this.gravityDir; break;
+                case 1: gx = GRAVITY * this.gravityDir; break;
+                case 2: gy = -GRAVITY * this.gravityDir; break;
+                case 3: gx = -GRAVITY * this.gravityDir; break;
+            }
+            if (rotSteps === 0 || rotSteps === 2) {
+                this.vy += gy * dt;
+                this.vy = clamp(this.vy, -MAX_FALL_SPEED, MAX_FALL_SPEED);
+            } else {
+                this.vx += gx * dt;
+                this.vx = clamp(this.vx, -MAX_FALL_SPEED, MAX_FALL_SPEED);
+            }
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.distance = Math.max(this.distance, this.x);
+            this.trailTimer -= dt;
+        }
+        getRect() { return { x: this.x, y: this.y, w: this.w, h: this.h }; }
+        render(ctx) {
+            ctx.save();
+            const cx = this.x + this.w / 2;
+            const cy = this.y + this.h / 2;
+            ctx.translate(cx, cy);
+            ctx.scale(this.squash, 2 - this.squash);
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = this.color;
+            ctx.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
+            ctx.shadowBlur = 0;
+            const eyeY = this.gravityDir > 0 ? -2 : 2;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(-4, eyeY - 2, 3, 3);
+            ctx.fillRect(2, eyeY - 2, 3, 3);
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(-3, eyeY - 1, 1, 1);
+            ctx.fillRect(3, eyeY - 1, 1, 1);
+            ctx.restore();
+        }
+    }
+
+    // ============================================================
+    // level.js — Procedural level generation with chunk system
+    // ============================================================
+    const CHUNK_WIDTH = 600;
+    const PLATFORM_H = 20;
+    const SPIKE_SIZE = 16;
+    const STAR_SIZE = 14;
+
+    function getDifficulty(chunkIndex) {
+        return Math.min(chunkIndex / 15, 1);
+    }
+    function selectTemplates(difficulty, count) {
+        const available = ['FLAT'];
+        if (difficulty > 0.05) available.push('GAP', 'PLATFORM_HIGH');
+        if (difficulty > 0.15) available.push('PLATFORM_LOW', 'SPIKE_FLOOR');
+        if (difficulty > 0.3) available.push('SPIKE_CEILING');
+        if (difficulty > 0.5) available.push('NARROW');
+        const templates = [];
+        for (let i = 0; i < count; i++) templates.push(randomChoice(available));
+        return templates;
+    }
+
+    class Chunk {
+        constructor(index, canvasHeight) {
+            this.index = index;
+            this.x = index * CHUNK_WIDTH;
+            this.w = CHUNK_WIDTH;
+            this.platforms = [];
+            this.spikes = [];
+            this.stars = [];
+            this.generate(canvasHeight);
+        }
+        generate(canvasH) {
+            const diff = getDifficulty(this.index);
+            const groundY = canvasH - 60;
+            const ceilY = 60;
+            if (this.index <= 1) {
+                this.platforms.push({ x: this.x, y: groundY, w: CHUNK_WIDTH, h: PLATFORM_H });
+                if (this.index === 1) {
+                    this.stars.push({
+                        x: this.x + CHUNK_WIDTH / 2 - STAR_SIZE / 2,
+                        y: groundY - 80, w: STAR_SIZE, h: STAR_SIZE, collected: false
+                    });
+                }
+                return;
+            }
+            const segCount = 2 + Math.floor(diff * 2);
+            const segWidth = CHUNK_WIDTH / segCount;
+            const templates = selectTemplates(diff, segCount);
+            for (let i = 0; i < segCount; i++) {
+                const sx = this.x + i * segWidth;
+                const tmpl = templates[i];
+                switch (tmpl) {
+                    case 'FLAT':
+                        this.platforms.push({ x: sx, y: groundY, w: segWidth, h: PLATFORM_H });
+                        break;
+                    case 'GAP': {
+                        const gapW = Math.min(segWidth * 0.5, 100 + diff * 60);
+                        const gapX = sx + (segWidth - gapW) / 2;
+                        this.platforms.push({ x: sx, y: groundY, w: gapX - sx, h: PLATFORM_H });
+                        this.platforms.push({ x: gapX + gapW, y: groundY, w: sx + segWidth - (gapX + gapW), h: PLATFORM_H });
+                        break;
+                    }
+                    case 'PLATFORM_HIGH': {
+                        this.platforms.push({ x: sx, y: groundY, w: segWidth, h: PLATFORM_H });
+                        const pw = segWidth * 0.6;
+                        this.platforms.push({
+                            x: sx + (segWidth - pw) / 2,
+                            y: groundY - 100 - randomRange(0, 50),
+                            w: pw, h: PLATFORM_H
+                        });
+                        break;
+                    }
+                    case 'PLATFORM_LOW': {
+                        const pw2 = segWidth * 0.7;
+                        this.platforms.push({ x: sx + (segWidth - pw2) / 2, y: groundY - 40, w: pw2, h: PLATFORM_H });
+                        const cw = segWidth * 0.5;
+                        this.platforms.push({ x: sx + (segWidth - cw) / 2, y: ceilY + 20, w: cw, h: PLATFORM_H });
+                        break;
+                    }
+                    case 'SPIKE_FLOOR':
+                        this.platforms.push({ x: sx, y: groundY, w: segWidth, h: PLATFORM_H });
+                        for (let s = 0; s < Math.floor(segWidth / (SPIKE_SIZE * 2)); s++) {
+                            this.spikes.push({
+                                x: sx + SPIKE_SIZE + s * SPIKE_SIZE * 2,
+                                y: groundY - SPIKE_SIZE, w: SPIKE_SIZE, h: SPIKE_SIZE, dir: 'up'
+                            });
+                        }
+                        break;
+                    case 'SPIKE_CEILING':
+                        this.platforms.push({ x: sx, y: groundY, w: segWidth, h: PLATFORM_H });
+                        this.platforms.push({ x: sx, y: ceilY, w: segWidth, h: PLATFORM_H });
+                        for (let s = 0; s < Math.floor(segWidth / (SPIKE_SIZE * 2)); s++) {
+                            this.spikes.push({
+                                x: sx + SPIKE_SIZE + s * SPIKE_SIZE * 2,
+                                y: ceilY + PLATFORM_H, w: SPIKE_SIZE, h: SPIKE_SIZE, dir: 'down'
+                            });
+                        }
+                        break;
+                    case 'NARROW':
+                        this.platforms.push({ x: sx, y: groundY, w: segWidth, h: PLATFORM_H });
+                        this.platforms.push({ x: sx, y: ceilY + 80, w: segWidth, h: PLATFORM_H });
+                        for (let s = 0; s < Math.floor(segWidth / (SPIKE_SIZE * 3)); s++) {
+                            this.spikes.push({
+                                x: sx + SPIKE_SIZE * 1.5 + s * SPIKE_SIZE * 3,
+                                y: ceilY + 80 + PLATFORM_H, w: SPIKE_SIZE, h: SPIKE_SIZE, dir: 'down'
+                            });
+                        }
+                        break;
+                }
+            }
+            const starCount = 1 + randomInt(0, Math.floor(1 + diff));
+            for (let i = 0; i < starCount; i++) {
+                this.stars.push({
+                    x: this.x + randomRange(30, CHUNK_WIDTH - 30),
+                    y: randomRange(ceilY + 50, groundY - 50),
+                    w: STAR_SIZE, h: STAR_SIZE, collected: false
+                });
+            }
+        }
+    }
+
+    class Level {
+        constructor(canvasHeight) {
+            this.canvasHeight = canvasHeight;
+            this.chunks = [];
+            this.nextChunkIndex = 0;
+            for (let i = 0; i < 5; i++) this.addChunk();
+        }
+        addChunk() {
+            this.chunks.push(new Chunk(this.nextChunkIndex, this.canvasHeight));
+            this.nextChunkIndex++;
+        }
+        update(cameraX) {
+            const aheadX = cameraX + CHUNK_WIDTH * 3;
+            while (this.nextChunkIndex * CHUNK_WIDTH < aheadX) this.addChunk();
+            this.chunks = this.chunks.filter(c => c.x + c.w > cameraX - CHUNK_WIDTH);
+        }
+        getAllPlatforms() {
+            const p = [];
+            for (const c of this.chunks) p.push(...c.platforms);
+            return p;
+        }
+        getAllSpikes() {
+            const s = [];
+            for (const c of this.chunks) s.push(...c.spikes);
+            return s;
+        }
+        getAllStars() {
+            const s = [];
+            for (const c of this.chunks) for (const st of c.stars) if (!st.collected) s.push(st);
+            return s;
+        }
+    }
+
+    // ============================================================
+    // renderer.js — All drawing/rendering logic
+    // ============================================================
+    class Renderer {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.ctx = canvas.getContext('2d');
+            this.bgHue = 220;
+            this.starRotation = 0;
+        }
+        clear() {
+            const ctx = this.ctx;
+            const w = this.canvas.width, h = this.canvas.height;
+            this.bgHue = (this.bgHue + 0.02) % 360;
+            const grad = ctx.createLinearGradient(0, 0, 0, h);
+            grad.addColorStop(0, `hsl(${this.bgHue}, 30%, 8%)`);
+            grad.addColorStop(1, `hsl(${(this.bgHue + 30) % 360}, 40%, 12%)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
+        }
+        drawBackgroundGrid(cameraX, cameraY) {
+            const ctx = this.ctx, spacing = 60;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+            const offsetX = -(cameraX * 0.3) % spacing;
+            const offsetY = -(cameraY * 0.3) % spacing;
+            for (let x = offsetX; x < this.canvas.width; x += spacing)
+                for (let y = offsetY; y < this.canvas.height; y += spacing)
+                    ctx.fillRect(x, y, 2, 2);
+        }
+        beginWorldTransform(cameraX, cameraY, rotation, canvasW, canvasH) {
+            const ctx = this.ctx;
+            ctx.save();
+            ctx.translate(canvasW / 2, canvasH / 2);
+            ctx.rotate(rotation);
+            ctx.translate(-canvasW / 2, -canvasH / 2);
+            ctx.translate(-cameraX, -cameraY);
+        }
+        endWorldTransform() { this.ctx.restore(); }
+        drawPlatforms(platforms) {
+            const ctx = this.ctx;
+            for (const p of platforms) {
+                ctx.fillStyle = '#1A2A3A';
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+                ctx.fillStyle = '#2A4A6A';
+                ctx.fillRect(p.x, p.y, p.w, 2);
+                ctx.strokeStyle = 'rgba(42, 74, 106, 0.3)';
+                ctx.lineWidth = 0.5;
+                for (let gx = p.x; gx < p.x + p.w; gx += 20) {
+                    ctx.beginPath(); ctx.moveTo(gx, p.y); ctx.lineTo(gx, p.y + p.h); ctx.stroke();
+                }
+            }
+        }
+        drawSpikes(spikes) {
+            const ctx = this.ctx;
+            for (const s of spikes) {
+                ctx.fillStyle = '#FF4444';
+                ctx.shadowColor = '#FF4444';
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                if (s.dir === 'up') {
+                    ctx.moveTo(s.x, s.y + s.h);
+                    ctx.lineTo(s.x + s.w / 2, s.y);
+                    ctx.lineTo(s.x + s.w, s.y + s.h);
+                } else {
+                    ctx.moveTo(s.x, s.y);
+                    ctx.lineTo(s.x + s.w / 2, s.y + s.h);
+                    ctx.lineTo(s.x + s.w, s.y);
+                }
+                ctx.closePath(); ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+        drawStars(stars) {
+            const ctx = this.ctx;
+            this.starRotation += 0.03;
+            for (const s of stars) {
+                if (s.collected) continue;
+                ctx.save();
+                ctx.translate(s.x + s.w / 2, s.y + s.h / 2);
+                ctx.rotate(this.starRotation);
+                ctx.fillStyle = '#FFD700';
+                ctx.shadowColor = '#FFD700';
+                ctx.shadowBlur = 10;
+                const half = s.w / 2;
+                ctx.beginPath();
+                ctx.moveTo(0, -half); ctx.lineTo(half, 0);
+                ctx.lineTo(0, half); ctx.lineTo(-half, 0);
+                ctx.closePath(); ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#FFEC8B';
+                const inner = half * 0.4;
+                ctx.beginPath();
+                ctx.moveTo(0, -inner); ctx.lineTo(inner, 0);
+                ctx.lineTo(0, inner); ctx.lineTo(-inner, 0);
+                ctx.closePath(); ctx.fill();
+                ctx.restore();
+            }
+        }
+        drawHUD(score, highScore, rotationTimer, rotationInterval, gravityDir, canvasW) {
+            const ctx = this.ctx;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 20px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('Score: ' + score, 15, 35);
+            ctx.font = '14px monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fillText('Best: ' + highScore, 15, 55);
+            const ringX = canvasW - 40, ringY = 40, ringR = 22;
+            const progress = rotationTimer / rotationInterval;
+            ctx.beginPath();
+            ctx.arc(ringX, ringY, ringR, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 4; ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(ringX, ringY, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+            ctx.strokeStyle = progress < 0.3 ? '#FF4444' : '#00E5FF';
+            ctx.lineWidth = 4; ctx.stroke();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(Math.ceil(rotationTimer), ringX, ringY + 5);
+            const arrowX = canvasW / 2, arrowY = 30;
+            ctx.fillStyle = 'rgba(0, 229, 255, 0.6)';
+            ctx.beginPath();
+            if (gravityDir > 0) {
+                ctx.moveTo(arrowX - 8, arrowY - 5);
+                ctx.lineTo(arrowX + 8, arrowY - 5);
+                ctx.lineTo(arrowX, arrowY + 8);
+            } else {
+                ctx.moveTo(arrowX - 8, arrowY + 5);
+                ctx.lineTo(arrowX + 8, arrowY + 5);
+                ctx.lineTo(arrowX, arrowY - 8);
+            }
+            ctx.closePath(); ctx.fill();
+            ctx.textAlign = 'left';
+        }
+        drawMenu(canvasW, canvasH, highScore) {
+            const ctx = this.ctx;
+            ctx.fillStyle = '#00E5FF';
+            ctx.font = 'bold 48px monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#00E5FF';
+            ctx.shadowBlur = 20;
+            ctx.fillText('GRAVITY', canvasW / 2, canvasH / 2 - 60);
+            ctx.fillStyle = '#FF4444';
+            ctx.shadowColor = '#FF4444';
+            ctx.fillText('SHIFT', canvasW / 2, canvasH / 2 - 10);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.font = '18px monospace';
+            ctx.fillText('Tap to flip gravity', canvasW / 2, canvasH / 2 + 40);
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
+            ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + pulse * 0.5) + ')';
+            ctx.font = 'bold 22px monospace';
+            ctx.fillText('TAP TO START', canvasW / 2, canvasH / 2 + 90);
+            if (highScore > 0) {
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.8)';
+                ctx.font = '16px monospace';
+                ctx.fillText('High Score: ' + highScore, canvasW / 2, canvasH / 2 + 130);
+            }
+            ctx.textAlign = 'left';
+        }
+        drawGameOver(canvasW, canvasH, score, highScore, isNewHigh) {
+            const ctx = this.ctx;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(0, 0, canvasW, canvasH);
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FF4444';
+            ctx.font = 'bold 42px monospace';
+            ctx.shadowColor = '#FF4444';
+            ctx.shadowBlur = 15;
+            ctx.fillText('GAME OVER', canvasW / 2, canvasH / 2 - 50);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 28px monospace';
+            ctx.fillText('Score: ' + score, canvasW / 2, canvasH / 2 + 10);
+            if (isNewHigh) {
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 18px monospace';
+                ctx.fillText('NEW HIGH SCORE!', canvasW / 2, canvasH / 2 + 45);
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.font = '16px monospace';
+                ctx.fillText('Best: ' + highScore, canvasW / 2, canvasH / 2 + 45);
+            }
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
+            ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + pulse * 0.5) + ')';
+            ctx.font = '20px monospace';
+            ctx.fillText('TAP TO RETRY', canvasW / 2, canvasH / 2 + 95);
+            ctx.textAlign = 'left';
+        }
+    }
+
+    // ============================================================
+    // game.js — Game loop, state management, main orchestrator
+    // ============================================================
+    const STATES = { MENU: 0, PLAYING: 1, GAME_OVER: 2 };
+    const BASE_ROTATION_INTERVAL = 10;
+    const MIN_ROTATION_INTERVAL = 6;
+    const ROTATION_DURATION = 1.0;
+    const OFFSCREEN_MARGIN = 200;
+
+    class Game {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.renderer = new Renderer(canvas);
+            this.input = new Input(canvas);
+            this.particles = new ParticleSystem();
+            this.audio = new GameAudio();
+            this.state = STATES.MENU;
+            this.highScore = parseInt(localStorage.getItem('gravityShiftHigh') || '0', 10);
+            this.lastTime = 0;
+            this.gameOverDelay = 0;
+            this.worldRotation = 0;
+            this.targetRotation = 0;
+            this.rotationTimer = BASE_ROTATION_INTERVAL;
+            this.rotationInterval = BASE_ROTATION_INTERVAL;
+            this.isRotating = false;
+            this.rotationProgress = 0;
+            this.rotationFrom = 0;
+            this.player = null;
+            this.level = null;
+            this.cameraX = 0;
+            this.cameraY = 0;
+            this.score = 0;
+            this.starsCollected = 0;
+            this.isNewHigh = false;
+            this.resize();
+            window.addEventListener('resize', () => this.resize());
+        }
+        resize() {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight;
+        }
+        startGame() {
+            this.audio.init();
+            this.player = new Player(100, this.canvas.height - 100);
+            this.level = new Level(this.canvas.height);
+            this.cameraX = 0; this.cameraY = 0;
+            this.score = 0; this.starsCollected = 0;
+            this.worldRotation = 0; this.targetRotation = 0;
+            this.rotationTimer = this.rotationInterval;
+            this.isRotating = false;
+            this.isNewHigh = false;
+            this.gameOverDelay = 0;
+            this.state = STATES.PLAYING;
+        }
+        die() {
+            if (!this.player.alive) return;
+            this.player.alive = false;
+            this.particles.burstDeath(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2);
+            this.audio.death();
+            this.score = Math.floor(this.player.distance / 10) + this.starsCollected * 50;
+            if (this.score > this.highScore) {
+                this.highScore = this.score;
+                this.isNewHigh = true;
+                localStorage.setItem('gravityShiftHigh', String(this.highScore));
+            }
+            this.gameOverDelay = 0.8;
+            this.state = STATES.GAME_OVER;
+        }
+        update(dt) {
+            if (dt > 0.1) dt = 0.1;
+            switch (this.state) {
+                case STATES.MENU:
+                    if (this.input.consume()) this.startGame();
+                    break;
+                case STATES.PLAYING:
+                    this.updatePlaying(dt);
+                    break;
+                case STATES.GAME_OVER:
+                    this.gameOverDelay -= dt;
+                    this.particles.update(dt);
+                    if (this.gameOverDelay <= 0 && this.input.consume()) this.state = STATES.MENU;
+                    break;
+            }
+        }
+        updatePlaying(dt) {
+            if (this.input.consume()) {
+                if (this.player.flipGravity()) this.audio.flipGravity(this.player.gravityDir);
+            }
+            if (!this.isRotating) {
+                this.rotationTimer -= dt;
+                if (this.rotationTimer <= 0) {
+                    this.isRotating = true;
+                    this.rotationProgress = 0;
+                    this.rotationFrom = this.worldRotation;
+                    this.targetRotation = this.worldRotation + Math.PI / 2;
+                    this.audio.rotate();
+                    const diff = Math.min(this.player.distance / 5000, 1);
+                    this.rotationInterval = lerp(BASE_ROTATION_INTERVAL, MIN_ROTATION_INTERVAL, diff);
+                }
+            } else {
+                this.rotationProgress += dt / ROTATION_DURATION;
+                if (this.rotationProgress >= 1) {
+                    this.rotationProgress = 1;
+                    this.worldRotation = this.targetRotation;
+                    this.isRotating = false;
+                    this.rotationTimer = this.rotationInterval;
+                } else {
+                    this.worldRotation = lerp(this.rotationFrom, this.targetRotation, easeInOutCubic(this.rotationProgress));
+                }
+            }
+            this.player.update(dt, this.worldRotation);
+            const platforms = this.level.getAllPlatforms();
+            const pRect = this.player.getRect();
+            for (const plat of platforms) {
+                if (!rectOverlap(pRect, plat)) continue;
+                const overlapTop = (pRect.y + pRect.h) - plat.y;
+                const overlapBottom = (plat.y + plat.h) - pRect.y;
+                const overlapLeft = (pRect.x + pRect.w) - plat.x;
+                const overlapRight = (plat.x + plat.w) - pRect.x;
+                const minOverlap = Math.min(overlapTop, overlapBottom, overlapLeft, overlapRight);
+                if (minOverlap === overlapTop && this.player.vy > 0) {
+                    this.player.y = plat.y - this.player.h; this.player.vy = 0;
+                } else if (minOverlap === overlapBottom && this.player.vy < 0) {
+                    this.player.y = plat.y + plat.h; this.player.vy = 0;
+                } else if (minOverlap === overlapLeft) {
+                    this.player.x = plat.x - this.player.w;
+                } else if (minOverlap === overlapRight) {
+                    this.player.x = plat.x + plat.w;
+                }
+            }
+            const spikes = this.level.getAllSpikes();
+            for (const spike of spikes) {
+                const sr = { x: spike.x + 3, y: spike.y + 3, w: spike.w - 6, h: spike.h - 6 };
+                if (rectOverlap(this.player.getRect(), sr)) { this.die(); return; }
+            }
+            const stars = this.level.getAllStars();
+            for (const star of stars) {
+                if (rectOverlap(this.player.getRect(), star)) {
+                    star.collected = true;
+                    this.starsCollected++;
+                    this.particles.burstStar(star.x + star.w / 2, star.y + star.h / 2);
+                    this.audio.collectStar();
+                }
+            }
+            const px = this.player.x - this.cameraX;
+            const py = this.player.y - this.cameraY;
+            if (py < -OFFSCREEN_MARGIN || py > this.canvas.height + OFFSCREEN_MARGIN || px < -OFFSCREEN_MARGIN * 2) {
+                this.die(); return;
+            }
+            if (this.player.trailTimer <= 0) {
+                this.particles.trail(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2, this.player.color);
+                this.player.trailTimer = 0.05;
+            }
+            this.cameraX = lerp(this.cameraX, this.player.x - this.canvas.width * 0.3, 5 * dt);
+            this.cameraY = 0;
+            this.level.update(this.cameraX);
+            this.particles.update(dt);
+            this.score = Math.floor(this.player.distance / 10) + this.starsCollected * 50;
+        }
+        render() {
+            const w = this.canvas.width, h = this.canvas.height;
+            this.renderer.clear();
+            if (this.state === STATES.MENU) {
+                this.renderer.drawBackgroundGrid(0, 0);
+                this.renderer.drawMenu(w, h, this.highScore);
+                return;
+            }
+            this.renderer.drawBackgroundGrid(this.cameraX, this.cameraY);
+            this.renderer.beginWorldTransform(this.cameraX, this.cameraY, this.worldRotation, w, h);
+            if (this.level) {
+                this.renderer.drawPlatforms(this.level.getAllPlatforms());
+                this.renderer.drawSpikes(this.level.getAllSpikes());
+                this.renderer.drawStars(this.level.getAllStars());
+            }
+            if (this.player) this.player.render(this.renderer.ctx);
+            this.particles.render(this.renderer.ctx);
+            this.renderer.endWorldTransform();
+            if (this.state === STATES.PLAYING) {
+                this.renderer.drawHUD(this.score, this.highScore, this.rotationTimer, this.rotationInterval, this.player.gravityDir, w);
+            }
+            if (this.state === STATES.GAME_OVER) {
+                this.renderer.drawGameOver(w, h, this.score, this.highScore, this.isNewHigh);
+            }
+        }
+        loop(timestamp) {
+            const dt = this.lastTime ? (timestamp - this.lastTime) / 1000 : 1 / 60;
+            this.lastTime = timestamp;
+            this.update(dt);
+            this.render();
+            requestAnimationFrame((t) => this.loop(t));
+        }
+        start() { requestAnimationFrame((t) => this.loop(t)); }
+    }
+
+    // ============================================================
+    // Bootstrap
+    // ============================================================
+    const canvas = document.getElementById('game');
+    const game = new Game(canvas);
+    game.start();
     </script>
 </body>
 </html>
