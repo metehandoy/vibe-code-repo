@@ -618,8 +618,8 @@
     const HAZARD = { SLOW: 0, SPEED: 1, DEATH: 2 };
 
     // These are in CFG so dev.html can tune them
-    if (!CFG.CFG.HAZARD_RADIUS) CFG.CFG.HAZARD_RADIUS = 10;
-    if (!CFG.CFG.HAZARD_EFFECT_DUR) CFG.CFG.HAZARD_EFFECT_DUR = 180; // 3 seconds at 60fps
+    if (!CFG.HAZARD_RADIUS) CFG.HAZARD_RADIUS = 10;
+    if (!CFG.HAZARD_EFFECT_DUR) CFG.HAZARD_EFFECT_DUR = 180; // 3 seconds at 60fps
     if (!CFG.TOKEN_MIN_GAP) CFG.TOKEN_MIN_GAP = 25;
     if (!CFG.TOKEN_SPAWN_CHANCE) CFG.TOKEN_SPAWN_CHANCE = 0.025;
     if (!CFG.TOKEN_NO_SPAWN_ZONE) CFG.TOKEN_NO_SPAWN_ZONE = 40;
@@ -1861,22 +1861,9 @@
     // Expose for dev.html
     window.__DRIFT_CFG_LIVE = CFG;
 
-    // Try loading drift-config.json, then start game
-    (async function() {
-        try {
-            const resp = await fetch('drift-config.json');
-            if (resp.ok) {
-                const cfg = await resp.json();
-                for (const key of Object.keys(cfg)) {
-                    if (key in CFG) CFG[key] = cfg[key];
-                }
-            }
-        } catch(e) { /* no config file, use defaults */ }
-
-        const canvas = document.getElementById('game');
-        const game = new Game(canvas);
-        game.start();
-    })();
+    const canvas = document.getElementById('game');
+    const game = new Game(canvas);
+    game.start();
     </script>
 </body>
 </html>

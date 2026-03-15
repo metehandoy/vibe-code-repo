@@ -466,36 +466,13 @@ function showStatus(msg) {
     setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
 }
 
-// Inject config into iframe before it loads
+// Push config to game iframe once it loads
 const iframe = document.getElementById('game-frame');
 iframe.addEventListener('load', () => {
-    // Set config into iframe's window before the game script uses it
-    // Since game already loaded, push to live CFG
+    // Game has started — push current slider values into its live CFG
     pushToGame();
     showStatus('Connected to game');
 });
-
-// Pre-inject: set __DRIFT_CFG on iframe window before src loads
-// We do this by removing src, writing config, then setting src
-iframe.removeAttribute('src');
-iframe.addEventListener('load', function firstLoad() {
-    iframe.removeEventListener('load', firstLoad);
-    try {
-        iframe.contentWindow.__DRIFT_CFG = { ...current };
-    } catch(e) {}
-}, { once: false });
-
-// Small delay to let iframe document be available, then inject and load
-setTimeout(() => {
-    try {
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
-        // Write a small script to set the config before game loads
-        doc.open();
-        doc.write('<script>window.__DRIFT_CFG = ' + JSON.stringify(current) + ';<\/script>');
-        doc.close();
-    } catch(e) {}
-    iframe.src = 'index.html';
-}, 50);
 
 buildUI();
 </script>
