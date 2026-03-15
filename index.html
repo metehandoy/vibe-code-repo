@@ -24,7 +24,8 @@
     // ============================================================
     // CONFIG
     // ============================================================
-    const CFG = {
+    // Expose CFG globally so dev.html can modify it at runtime
+    const CFG = window.__DRIFT_CFG || {
         ARROW_SPEED: 3.5,
         STEER_RATE: 0.014,          // slightly slower rotation for less dizziness
         STEER_MAX: 0.045,           // lower cap to prevent extreme spinning
@@ -196,7 +197,7 @@
             if (len < skipLast + 5) return false;
             const checkStart = Math.max(0, len - checkWindow);
             const checkEnd = len - skipLast;
-            const margin = 15;
+            const margin = CFG.OVERLAP_MARGIN;
             for (let i = checkStart; i < checkEnd; i++) {
                 const s = this.spine[i];
                 const dx = cx - s.x;
@@ -281,7 +282,7 @@
 
             // Smooth angle changes — blend toward target to prevent jagged walls
             if (!this._lastDelta) this._lastDelta = 0;
-            const smoothed = lerp(this._lastDelta, targetDelta, 0.4);
+            const smoothed = lerp(this._lastDelta, targetDelta, CFG.ANGLE_SMOOTH);
             this._lastDelta = smoothed;
             this.currentAngle += smoothed;
 
@@ -305,7 +306,7 @@
             let recentOverlap = this._wouldOverlapRecent(candX, candY, estWidth);
 
             // Check 2: predictive avoidance for distant segments
-            const safeDist = CFG.TRACK_WIDTH * 3.5;
+            const safeDist = CFG.TRACK_WIDTH * CFG.SAFE_DIST_MULT;
             const lookSteps = [1, 3, 6, 10, 16, 24, 35, 50];
             let distantThreat = false;
             if (!recentOverlap) {
@@ -615,8 +616,21 @@
     // ============================================================
     // Hazard types for road dangers
     const HAZARD = { SLOW: 0, SPEED: 1, DEATH: 2 };
-    const HAZARD_RADIUS = 10;
-    const HAZARD_EFFECT_DUR = 180; // 3 seconds at 60fps
+
+    // These are in CFG so dev.html can tune them
+    if (!CFG.CFG.HAZARD_RADIUS) CFG.CFG.HAZARD_RADIUS = 10;
+    if (!CFG.CFG.HAZARD_EFFECT_DUR) CFG.CFG.HAZARD_EFFECT_DUR = 180; // 3 seconds at 60fps
+    if (!CFG.TOKEN_MIN_GAP) CFG.TOKEN_MIN_GAP = 25;
+    if (!CFG.TOKEN_SPAWN_CHANCE) CFG.TOKEN_SPAWN_CHANCE = 0.025;
+    if (!CFG.TOKEN_NO_SPAWN_ZONE) CFG.TOKEN_NO_SPAWN_ZONE = 40;
+    if (!CFG.HAZARD_MIN_GAP) CFG.HAZARD_MIN_GAP = 10;
+    if (!CFG.HAZARD_SPAWN_CHANCE) CFG.HAZARD_SPAWN_CHANCE = 0.02;
+    if (!CFG.HAZARD_NO_SPAWN_ZONE) CFG.HAZARD_NO_SPAWN_ZONE = 80;
+    if (!CFG.HAZARD_SLOW_MULT) CFG.HAZARD_SLOW_MULT = 0.55;
+    if (!CFG.HAZARD_SPEED_MULT) CFG.HAZARD_SPEED_MULT = 1.12;
+    if (!CFG.ANGLE_SMOOTH) CFG.ANGLE_SMOOTH = 0.4;
+    if (!CFG.OVERLAP_MARGIN) CFG.OVERLAP_MARGIN = 15;
+    if (!CFG.SAFE_DIST_MULT) CFG.SAFE_DIST_MULT = 3.5;
 
     class TimeTokenManager {
         constructor() {
@@ -633,12 +647,9 @@
 
         // Called by Track.generateNext when a new segment is created
         spawnOnSegment(seg, difficulty) {
-            // Never spawn on starting segments
-            if (seg.index < 40) return;
-            // Enforce minimum gap of 25 segments between tokens
-            if (seg.index - this.lastSpawnSeg < 25) return;
-            // ~3% chance per segment, tuned by difficulty
-            const chance = 0.025 + difficulty * 0.01;
+            if (seg.index < CFG.TOKEN_NO_SPAWN_ZONE) return;
+            if (seg.index - this.lastSpawnSeg < CFG.TOKEN_MIN_GAP) return;
+            const chance = CFG.TOKEN_SPAWN_CHANCE + difficulty * 0.01;
             if (Math.random() > chance) return;
             const nx = Math.cos(seg.angle + Math.PI / 2);
             const ny = Math.sin(seg.angle + Math.PI / 2);
@@ -734,10 +745,9 @@
 
         spawnOnSegment(seg, difficulty) {
             // Start spawning after some distance; ~2.5% chance per segment
-            if (seg.index < 80) return;
-            // Enforce minimum 10-segment gap between hazards
-            if (seg.index - this.lastSpawnSeg < 10) return;
-            const chance = 0.02 + difficulty * 0.015;
+            if (seg.index < CFG.HAZARD_NO_SPAWN_ZONE) return;
+            if (seg.index - this.lastSpawnSeg < CFG.HAZARD_MIN_GAP) return;
+            const chance = CFG.HAZARD_SPAWN_CHANCE + difficulty * 0.015;
             if (Math.random() > chance) return;
             const nx = Math.cos(seg.angle + Math.PI / 2);
             const ny = Math.sin(seg.angle + Math.PI / 2);
@@ -767,7 +777,7 @@
             for (const h of this.hazards) {
                 if (h.hit) continue;
                 const d = dist(arrowX, arrowY, h.x, h.y);
-                if (d < HAZARD_RADIUS + CFG.ARROW_LENGTH * 0.5) {
+                if (d < CFG.HAZARD_RADIUS + CFG.ARROW_LENGTH * 0.5) {
                     h.hit = true;
                     if (h.type === HAZARD.DEATH) return 'death';
                     if (h.type === HAZARD.SLOW) {
@@ -778,7 +788,7 @@
                             if (this.effectStack === 0) this.effectTimer = 0;
                         } else {
                             this.effectStack--;
-                            this.effectTimer = HAZARD_EFFECT_DUR; // reset/extend timer
+                            this.effectTimer = CFG.HAZARD_EFFECT_DUR; // reset/extend timer
                         }
                         return 'slow';
                     }
@@ -790,7 +800,7 @@
                             if (this.effectStack === 0) this.effectTimer = 0;
                         } else {
                             this.effectStack++;
-                            this.effectTimer = HAZARD_EFFECT_DUR; // reset/extend timer
+                            this.effectTimer = CFG.HAZARD_EFFECT_DUR; // reset/extend timer
                         }
                         return 'speed';
                     }
@@ -811,8 +821,8 @@
 
         getSpeedMult() {
             if (this.effectStack === 0 || this.effectTimer <= 0) return 1;
-            if (this.effectStack < 0) return 0.55;  // slow
-            if (this.effectStack > 0) return 1.12;   // speed — gentle boost
+            if (this.effectStack < 0) return CFG.HAZARD_SLOW_MULT;
+            if (this.effectStack > 0) return CFG.HAZARD_SPEED_MULT;
             return 1;
         }
 
@@ -853,7 +863,7 @@
                 }
 
                 const pulse = 0.85 + 0.15 * Math.sin(now * 5 + h.segIdx);
-                const r = HAZARD_RADIUS * pulse;
+                const r = CFG.HAZARD_RADIUS * pulse;
 
                 // Outer glow
                 ctx.beginPath();
@@ -908,6 +918,7 @@
             this.leftDown = false;
             this.rightDown = false;
             this.anyTap = false;
+            this.brakeDown = false;
 
             // Touch
             canvas.addEventListener('touchstart', (e) => {
@@ -946,11 +957,12 @@
             document.addEventListener('keydown', (e) => {
                 if (e.code === 'ArrowLeft' || e.code === 'KeyA') { this.leftDown = true; this.anyTap = true; }
                 if (e.code === 'ArrowRight' || e.code === 'KeyD') { this.rightDown = true; this.anyTap = true; }
-                if (e.code === 'Space') this.anyTap = true;
+                if (e.code === 'Space') { this.brakeDown = true; this.anyTap = true; e.preventDefault(); }
             });
             document.addEventListener('keyup', (e) => {
                 if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.leftDown = false;
                 if (e.code === 'ArrowRight' || e.code === 'KeyD') this.rightDown = false;
+                if (e.code === 'Space') this.brakeDown = false;
             });
 
             document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
@@ -980,7 +992,7 @@
         }
 
         isBraking() {
-            return this.leftDown && this.rightDown;
+            return this.brakeDown || (this.leftDown && this.rightDown);
         }
 
         consumeTap() {
@@ -1846,9 +1858,25 @@
     // ============================================================
     // BOOTSTRAP
     // ============================================================
-    const canvas = document.getElementById('game');
-    const game = new Game(canvas);
-    game.start();
+    // Expose for dev.html
+    window.__DRIFT_CFG_LIVE = CFG;
+
+    // Try loading drift-config.json, then start game
+    (async function() {
+        try {
+            const resp = await fetch('drift-config.json');
+            if (resp.ok) {
+                const cfg = await resp.json();
+                for (const key of Object.keys(cfg)) {
+                    if (key in CFG) CFG[key] = cfg[key];
+                }
+            }
+        } catch(e) { /* no config file, use defaults */ }
+
+        const canvas = document.getElementById('game');
+        const game = new Game(canvas);
+        game.start();
+    })();
     </script>
 </body>
 </html>

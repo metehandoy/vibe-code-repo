@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drift Arrow - Dev Tuner</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #0a0014;
+    color: #ccc;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#panel {
+    width: 320px;
+    min-width: 320px;
+    height: 100vh;
+    overflow-y: auto;
+    background: #12081e;
+    border-right: 1px solid #333;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#panel::-webkit-scrollbar { width: 6px; }
+#panel::-webkit-scrollbar-track { background: #12081e; }
+#panel::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+#game-container {
+    flex: 1;
+    position: relative;
+}
+
+#game-container iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+h2 {
+    color: #ff00ff;
+    font-size: 16px;
+    margin: 0 0 6px 0;
+    text-shadow: 0 0 10px #ff00ff;
+}
+
+.section {
+    background: #1a0e2a;
+    border: 1px solid #2a1a3a;
+    border-radius: 4px;
+    padding: 6px;
+    margin-bottom: 4px;
+}
+
+.section-title {
+    color: #00ffff;
+    font-size: 11px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.section-title:hover { color: #66ffff; }
+
+.param-row {
+    display: flex;
+    align-items: center;
+    margin: 2px 0;
+    gap: 4px;
+}
+
+.param-row label {
+    flex: 0 0 110px;
+    font-size: 10px;
+    color: #aaa;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.param-row input[type="range"] {
+    flex: 1;
+    height: 14px;
+    accent-color: #ff00ff;
+    cursor: pointer;
+}
+
+.param-row .val {
+    flex: 0 0 50px;
+    text-align: right;
+    font-size: 10px;
+    color: #ffee00;
+    font-weight: bold;
+}
+
+.btn-row {
+    display: flex;
+    gap: 4px;
+    margin: 4px 0;
+}
+
+.btn {
+    flex: 1;
+    padding: 6px 4px;
+    background: #2a1a4a;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.btn:hover { background: #3a2a5a; }
+.btn.export { border-color: #00ffa0; color: #00ffa0; }
+.btn.import { border-color: #4488ff; color: #4488ff; }
+.btn.reset { border-color: #ff3366; color: #ff3366; }
+.btn.load { border-color: #ffaa00; color: #ffaa00; }
+
+#status {
+    padding: 4px;
+    font-size: 10px;
+    color: #00ffa0;
+    min-height: 18px;
+}
+
+.controls-hint {
+    color: #666;
+    font-size: 10px;
+    padding: 4px;
+    border-top: 1px solid #222;
+    margin-top: auto;
+}
+</style>
+</head>
+<body>
+
+<div id="panel">
+    <h2>DRIFT ARROW DEV</h2>
+
+    <div class="btn-row">
+        <button class="btn export" onclick="exportConfig()">Export JSON</button>
+        <button class="btn import" onclick="importConfig()">Import JSON</button>
+        <button class="btn reset" onclick="resetDefaults()">Reset</button>
+    </div>
+    <div class="btn-row">
+        <button class="btn load" onclick="loadConfigFile()">Load config.json</button>
+        <button class="btn export" onclick="saveConfigFile()">Save config.json</button>
+    </div>
+    <div id="status"></div>
+
+    <div id="params"></div>
+
+    <div class="controls-hint">
+        A/D or Arrows: steer | Space: brake<br>
+        Changes apply in real-time. Export to save.
+    </div>
+</div>
+
+<div id="game-container">
+    <iframe id="game-frame" src="index.html"></iframe>
+</div>
+
+<script>
+// Default values — must match index.html exactly
+const DEFAULTS = {
+    // Arrow / Driving
+    ARROW_SPEED: 3.5,
+    STEER_RATE: 0.014,
+    STEER_MAX: 0.045,
+    GRIP: 0.025,
+    REALIGN_RATE: 0.04,
+    DRIFT_DRAG_EXP: 2.0,
+    DRIFT_DRAG_SCALE: 0.008,
+    ARROW_LENGTH: 22,
+    ARROW_WIDTH: 10,
+
+    // Braking
+    BRAKE_DECEL: 0.02,
+    BRAKE_MIN_SPEED: 0.05,
+
+    // Speed Recovery
+    SPEED_RECOVERY: 0.012,
+    SPEED_RECOVERY_RELEASE: 0.06,
+
+    // Track Shape
+    TRACK_WIDTH: 120,
+    MIN_TRACK_WIDTH: 45,
+    SEGMENT_LENGTH: 12,
+    LOOK_AHEAD: 120,
+    LOOK_BEHIND: 100,
+    ANGLE_SMOOTH: 0.4,
+
+    // Overlap Avoidance
+    OVERLAP_MARGIN: 15,
+    SAFE_DIST_MULT: 3.5,
+
+    // Difficulty
+    DIFFICULTY_RAMP: 0.00012,
+    METERS_PER_SEGMENT: 0.03,
+
+    // Timer / Tokens
+    START_TIME: 30,
+    TIME_TOKEN_VALUE: 3.5,
+    TOKEN_RADIUS: 10,
+    TOKEN_MIN_GAP: 25,
+    TOKEN_SPAWN_CHANCE: 0.025,
+    TOKEN_NO_SPAWN_ZONE: 40,
+
+    // Hazards
+    HAZARD_RADIUS: 10,
+    HAZARD_EFFECT_DUR: 180,
+    HAZARD_MIN_GAP: 10,
+    HAZARD_SPAWN_CHANCE: 0.02,
+    HAZARD_NO_SPAWN_ZONE: 80,
+    HAZARD_SLOW_MULT: 0.55,
+    HAZARD_SPEED_MULT: 1.12,
+};
+
+// Parameter definitions: [key, label, min, max, step]
+const PARAM_SECTIONS = [
+    { title: 'Arrow / Driving', params: [
+        ['ARROW_SPEED', 'Speed', 1, 10, 0.1],
+        ['STEER_RATE', 'Steer Rate', 0.002, 0.05, 0.001],
+        ['STEER_MAX', 'Steer Max', 0.01, 0.15, 0.005],
+        ['GRIP', 'Grip', 0.005, 0.1, 0.005],
+        ['REALIGN_RATE', 'Realign Rate', 0.01, 0.15, 0.005],
+        ['DRIFT_DRAG_EXP', 'Drift Drag Exp', 1, 4, 0.1],
+        ['DRIFT_DRAG_SCALE', 'Drift Drag Scl', 0.001, 0.03, 0.001],
+        ['ARROW_LENGTH', 'Arrow Length', 10, 40, 1],
+        ['ARROW_WIDTH', 'Arrow Width', 4, 20, 1],
+    ]},
+    { title: 'Braking', params: [
+        ['BRAKE_DECEL', 'Deceleration', 0.005, 0.1, 0.005],
+        ['BRAKE_MIN_SPEED', 'Min Speed', 0, 0.5, 0.01],
+    ]},
+    { title: 'Speed Recovery', params: [
+        ['SPEED_RECOVERY', 'Recovery Rate', 0.002, 0.05, 0.002],
+        ['SPEED_RECOVERY_RELEASE', 'Release Burst', 0.01, 0.2, 0.01],
+    ]},
+    { title: 'Track Shape', params: [
+        ['TRACK_WIDTH', 'Max Width', 60, 200, 5],
+        ['MIN_TRACK_WIDTH', 'Min Width', 20, 100, 5],
+        ['SEGMENT_LENGTH', 'Seg Length', 4, 30, 1],
+        ['LOOK_AHEAD', 'Look Ahead', 40, 250, 10],
+        ['LOOK_BEHIND', 'Look Behind', 30, 200, 10],
+        ['ANGLE_SMOOTH', 'Angle Smooth', 0.1, 1.0, 0.05],
+    ]},
+    { title: 'Overlap Avoidance', params: [
+        ['OVERLAP_MARGIN', 'Margin', 0, 40, 1],
+        ['SAFE_DIST_MULT', 'Safe Dist x', 1.5, 6, 0.25],
+    ]},
+    { title: 'Difficulty', params: [
+        ['DIFFICULTY_RAMP', 'Ramp Speed', 0.00002, 0.0005, 0.00002],
+        ['METERS_PER_SEGMENT', 'Meters/Seg', 0.01, 0.1, 0.005],
+    ]},
+    { title: 'Timer / Tokens', params: [
+        ['START_TIME', 'Start Time (s)', 10, 120, 5],
+        ['TIME_TOKEN_VALUE', 'Token Value (s)', 0.5, 10, 0.5],
+        ['TOKEN_RADIUS', 'Token Radius', 5, 25, 1],
+        ['TOKEN_MIN_GAP', 'Min Gap (segs)', 5, 60, 1],
+        ['TOKEN_SPAWN_CHANCE', 'Spawn Chance', 0.005, 0.1, 0.005],
+        ['TOKEN_NO_SPAWN_ZONE', 'No-Spawn Zone', 10, 100, 5],
+    ]},
+    { title: 'Hazards', params: [
+        ['HAZARD_RADIUS', 'Radius', 5, 25, 1],
+        ['HAZARD_EFFECT_DUR', 'Effect Dur (f)', 60, 600, 30],
+        ['HAZARD_MIN_GAP', 'Min Gap (segs)', 3, 30, 1],
+        ['HAZARD_SPAWN_CHANCE', 'Spawn Chance', 0.005, 0.1, 0.005],
+        ['HAZARD_NO_SPAWN_ZONE', 'No-Spawn Zone', 20, 200, 10],
+        ['HAZARD_SLOW_MULT', 'Slow Mult', 0.2, 0.9, 0.05],
+        ['HAZARD_SPEED_MULT', 'Speed Mult', 1.02, 1.5, 0.02],
+    ]},
+];
+
+// Current values
+let current = { ...DEFAULTS };
+
+// Try to load saved config from localStorage
+try {
+    const saved = localStorage.getItem('driftArrowDevConfig');
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        Object.assign(current, parsed);
+    }
+} catch (e) {}
+
+function buildUI() {
+    const container = document.getElementById('params');
+    container.innerHTML = '';
+
+    for (const section of PARAM_SECTIONS) {
+        const div = document.createElement('div');
+        div.className = 'section';
+
+        const title = document.createElement('div');
+        title.className = 'section-title';
+        title.textContent = section.title;
+        const body = document.createElement('div');
+        body.className = 'section-body';
+
+        title.addEventListener('click', () => {
+            body.style.display = body.style.display === 'none' ? '' : 'none';
+        });
+
+        div.appendChild(title);
+
+        for (const [key, label, min, max, step] of section.params) {
+            const row = document.createElement('div');
+            row.className = 'param-row';
+
+            const lbl = document.createElement('label');
+            lbl.textContent = label;
+            lbl.title = key;
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = min;
+            slider.max = max;
+            slider.step = step;
+            slider.value = current[key];
+            slider.id = 'slider-' + key;
+
+            const val = document.createElement('span');
+            val.className = 'val';
+            val.id = 'val-' + key;
+            val.textContent = formatVal(current[key], step);
+
+            slider.addEventListener('input', () => {
+                const v = parseFloat(slider.value);
+                current[key] = v;
+                val.textContent = formatVal(v, step);
+                pushToGame();
+                autoSave();
+            });
+
+            row.appendChild(lbl);
+            row.appendChild(slider);
+            row.appendChild(val);
+            body.appendChild(row);
+        }
+
+        div.appendChild(body);
+        container.appendChild(div);
+    }
+}
+
+function formatVal(v, step) {
+    if (step >= 1) return String(Math.round(v));
+    const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+    return v.toFixed(Math.min(decimals, 5));
+}
+
+function pushToGame() {
+    const iframe = document.getElementById('game-frame');
+    if (iframe.contentWindow && iframe.contentWindow.__DRIFT_CFG_LIVE) {
+        const cfg = iframe.contentWindow.__DRIFT_CFG_LIVE;
+        for (const key in current) {
+            cfg[key] = current[key];
+        }
+    }
+}
+
+function autoSave() {
+    localStorage.setItem('driftArrowDevConfig', JSON.stringify(current));
+}
+
+function updateUIFromCurrent() {
+    for (const section of PARAM_SECTIONS) {
+        for (const [key, , , , step] of section.params) {
+            const slider = document.getElementById('slider-' + key);
+            const val = document.getElementById('val-' + key);
+            if (slider && val) {
+                slider.value = current[key];
+                val.textContent = formatVal(current[key], step);
+            }
+        }
+    }
+}
+
+function exportConfig() {
+    const json = JSON.stringify(current, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'drift-config.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus('Config exported as drift-config.json');
+}
+
+function importConfig() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const parsed = JSON.parse(reader.result);
+                // Only apply known keys
+                for (const key of Object.keys(DEFAULTS)) {
+                    if (key in parsed) current[key] = parsed[key];
+                }
+                updateUIFromCurrent();
+                pushToGame();
+                autoSave();
+                showStatus('Config imported from ' + file.name);
+            } catch (err) {
+                showStatus('Error: invalid JSON - ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    });
+    input.click();
+}
+
+function resetDefaults() {
+    current = { ...DEFAULTS };
+    updateUIFromCurrent();
+    pushToGame();
+    autoSave();
+    showStatus('Reset to defaults');
+}
+
+async function loadConfigFile() {
+    try {
+        const resp = await fetch('drift-config.json');
+        if (!resp.ok) throw new Error('No drift-config.json found (HTTP ' + resp.status + ')');
+        const parsed = await resp.json();
+        for (const key of Object.keys(DEFAULTS)) {
+            if (key in parsed) current[key] = parsed[key];
+        }
+        updateUIFromCurrent();
+        pushToGame();
+        autoSave();
+        showStatus('Loaded drift-config.json');
+    } catch (err) {
+        showStatus('Error: ' + err.message);
+    }
+}
+
+function saveConfigFile() {
+    exportConfig();
+    showStatus('Save drift-config.json to project root, game auto-loads it');
+}
+
+function showStatus(msg) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+}
+
+// Inject config into iframe before it loads
+const iframe = document.getElementById('game-frame');
+iframe.addEventListener('load', () => {
+    // Set config into iframe's window before the game script uses it
+    // Since game already loaded, push to live CFG
+    pushToGame();
+    showStatus('Connected to game');
+});
+
+// Pre-inject: set __DRIFT_CFG on iframe window before src loads
+// We do this by removing src, writing config, then setting src
+iframe.removeAttribute('src');
+iframe.addEventListener('load', function firstLoad() {
+    iframe.removeEventListener('load', firstLoad);
+    try {
+        iframe.contentWindow.__DRIFT_CFG = { ...current };
+    } catch(e) {}
+}, { once: false });
+
+// Small delay to let iframe document be available, then inject and load
+setTimeout(() => {
+    try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        // Write a small script to set the config before game loads
+        doc.open();
+        doc.write('<script>window.__DRIFT_CFG = ' + JSON.stringify(current) + ';<\/script>');
+        doc.close();
+    } catch(e) {}
+    iframe.src = 'index.html';
+}, 50);
+
+buildUI();
+</script>
+
+</body>
+</html>
