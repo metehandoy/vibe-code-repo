@@ -622,15 +622,21 @@
         constructor() {
             this.tokens = [];  // {x, y, segIdx, collected, pulse}
             this.collectFlash = 0;
+            this.lastSpawnSeg = 0;
         }
 
         reset() {
             this.tokens = [];
             this.collectFlash = 0;
+            this.lastSpawnSeg = 0;
         }
 
         // Called by Track.generateNext when a new segment is created
         spawnOnSegment(seg, difficulty) {
+            // Never spawn on starting segments
+            if (seg.index < 40) return;
+            // Enforce minimum gap of 25 segments between tokens
+            if (seg.index - this.lastSpawnSeg < 25) return;
             // ~3% chance per segment, tuned by difficulty
             const chance = 0.025 + difficulty * 0.01;
             if (Math.random() > chance) return;
@@ -644,6 +650,7 @@
                 collected: false,
                 pulse: Math.random() * Math.PI * 2
             });
+            this.lastSpawnSeg = seg.index;
         }
 
         // Remove tokens on segments that have been deleted
@@ -779,7 +786,7 @@
         getSpeedMult() {
             if (!this.activeEffect) return 1;
             if (this.activeEffect.type === 'slow') return 0.55;
-            if (this.activeEffect.type === 'speed') return 1.6;
+            if (this.activeEffect.type === 'speed') return 1.25;
             return 1;
         }
 
