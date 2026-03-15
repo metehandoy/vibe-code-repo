@@ -24,8 +24,15 @@
     // ============================================================
     // CONFIG
     // ============================================================
-    // Expose CFG globally so dev.html can modify it at runtime
-    const CFG = window.__DRIFT_CFG || {
+    // Read config overrides from URL hash (used by dev.html)
+    let __hashCfg = null;
+    try {
+        if (window.location.hash.length > 1) {
+            __hashCfg = JSON.parse(decodeURIComponent(window.location.hash.slice(1)));
+        }
+    } catch(e) {}
+
+    const CFG = __hashCfg || window.__DRIFT_CFG || {
         ARROW_SPEED: 3.5,
         STEER_RATE: 0.014,          // slightly slower rotation for less dizziness
         STEER_MAX: 0.045,           // lower cap to prevent extreme spinning

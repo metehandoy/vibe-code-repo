@@ -412,25 +412,15 @@ function markChanged() {
 }
 
 function applyConfig() {
-    pushToGame();
+    // Reload the game iframe with config passed via URL hash
+    // This works on file:// and http:// without cross-origin issues
+    const iframe = document.getElementById('game-frame');
+    const hash = '#' + encodeURIComponent(JSON.stringify(current));
+    iframe.src = 'index.html' + hash;
     applied = { ...current };
     hasUnapplied = false;
     document.getElementById('apply-btn').classList.remove('changed');
-    showStatus('Config applied to game');
-}
-
-function pushToGame() {
-    const iframe = document.getElementById('game-frame');
-    try {
-        if (iframe.contentWindow && iframe.contentWindow.__DRIFT_CFG_LIVE) {
-            const cfg = iframe.contentWindow.__DRIFT_CFG_LIVE;
-            for (const key in current) {
-                cfg[key] = current[key];
-            }
-        }
-    } catch (e) {
-        showStatus('Cannot access game iframe — same-origin required');
-    }
+    showStatus('Game reloaded with new config');
 }
 
 function autoSave() {
@@ -573,9 +563,15 @@ document.addEventListener('mouseup', () => {
 // IFRAME LOAD
 // ============================================================
 const iframe = document.getElementById('game-frame');
+
+// On first load, apply saved config if it differs from defaults
+const hasCustomConfig = Object.keys(DEFAULTS).some(k => current[k] !== DEFAULTS[k]);
+if (hasCustomConfig) {
+    const hash = '#' + encodeURIComponent(JSON.stringify(current));
+    iframe.src = 'index.html' + hash;
+}
+
 iframe.addEventListener('load', () => {
-    // Apply saved config on load
-    pushToGame();
     applied = { ...current };
     showStatus('Connected to game');
 });
