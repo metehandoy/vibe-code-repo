@@ -34,8 +34,10 @@
         DRIFT_DRAG_SCALE: 0.008,
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
-        TRACK_WIDTH: 90,
-        MIN_TRACK_WIDTH: 28,
+        TRACK_WIDTH: 120,
+        MIN_TRACK_WIDTH: 45,
+        BRAKE_DECEL: 0.03,
+        BRAKE_MIN_SPEED: 0.35,
         SEGMENT_LENGTH: 12,
         LOOK_AHEAD: 120,
         LOOK_BEHIND: 100,
@@ -88,6 +90,7 @@
             this.segmentIndex = 0;
             this.difficulty = 0;
             this.backWall = null;
+            this.startWall = null;
             this.straightRemaining = 20;
             this.turnRemaining = 0;
             this.pattern = PATTERN.STRAIGHT;
@@ -115,53 +118,53 @@
         _pickPattern() {
             const d = this.difficulty;
             const r = Math.random();
-            if (r < 0.08) {
-                // Short straight breather
+            if (r < 0.06) {
+                // Short straight breather (rare)
                 this.pattern = PATTERN.STRAIGHT;
-                this.straightRemaining = 3 + Math.floor(Math.random() * 6 * (1 - d * 0.5));
-                this._lastTurnDir = 0; // reset after straight, allow any direction next
-            } else if (r < 0.28) {
+                this.straightRemaining = 3 + Math.floor(Math.random() * 5 * (1 - d * 0.5));
+                this._lastTurnDir = 0;
+            } else if (r < 0.25) {
                 // S-curve chicane: alternating sharp turns
                 this.pattern = PATTERN.CHICANE;
                 this.patternData = {
-                    turns: 2 + Math.floor(Math.random() * 3 + d * 2),
-                    segsPerTurn: 4 + Math.floor(Math.random() * 7),
-                    sharpness: 0.06 + d * 0.10,
+                    turns: 2 + Math.floor(Math.random() * 3 + d * 3),
+                    segsPerTurn: 5 + Math.floor(Math.random() * 8),
+                    sharpness: 0.07 + d * 0.12,
                 };
                 this.turnDir = this._pickTurnDir();
                 this.turnRemaining = this.patternData.segsPerTurn;
                 this.patternStep = 0;
-            } else if (r < 0.48) {
-                // Hairpin: tight U-turn (max ~120° to prevent loops)
+            } else if (r < 0.45) {
+                // Hairpin: tight U-turn
                 this.pattern = PATTERN.HAIRPIN;
                 this.turnDir = this._pickTurnDir();
-                this.turnRemaining = 8 + Math.floor(Math.random() * 14);
-                this.patternData = { sharpness: 0.07 + d * 0.07, maxTotal: Math.PI * 0.65 };
+                this.turnRemaining = 10 + Math.floor(Math.random() * 16);
+                this.patternData = { sharpness: 0.08 + d * 0.08, maxTotal: Math.PI * 0.7 };
                 this.patternData.turned = 0;
-            } else if (r < 0.65 && d > 0.2) {
-                // Spiral: sustained turning that tightens (max ~150°)
+            } else if (r < 0.62 && d > 0.15) {
+                // Spiral: sustained turning that tightens
                 this.pattern = PATTERN.SPIRAL;
                 this.turnDir = this._pickTurnDir();
-                this.turnRemaining = 12 + Math.floor(Math.random() * 16);
-                this.patternData = { baseSharp: 0.03, ramp: 0.0015 + d * 0.002, maxTotal: Math.PI * 0.8 };
+                this.turnRemaining = 14 + Math.floor(Math.random() * 18);
+                this.patternData = { baseSharp: 0.035, ramp: 0.002 + d * 0.0025, maxTotal: Math.PI * 0.85 };
                 this.patternData.turned = 0;
                 this.patternStep = 0;
-            } else if (r < 0.82 && d > 0.15) {
+            } else if (r < 0.80 && d > 0.1) {
                 // Slalom: rapid small wiggles
                 this.pattern = PATTERN.SLALOM;
                 this.patternData = {
-                    freq: 0.18 + Math.random() * 0.15,
-                    amp: 0.06 + d * 0.08,
-                    length: 15 + Math.floor(Math.random() * 25),
+                    freq: 0.2 + Math.random() * 0.18,
+                    amp: 0.07 + d * 0.10,
+                    length: 18 + Math.floor(Math.random() * 28),
                 };
                 this.turnRemaining = this.patternData.length;
                 this.patternStep = 0;
             } else {
-                // Normal curve (max ~100°)
+                // Normal curve
                 this.pattern = PATTERN.CURVE;
                 this.turnDir = this._pickTurnDir();
-                this.turnRemaining = 8 + Math.floor(Math.random() * 16);
-                this.patternData = { sharpness: 0.05 + d * 0.09, maxTotal: Math.PI * 0.55, turned: 0 };
+                this.turnRemaining = 10 + Math.floor(Math.random() * 18);
+                this.patternData = { sharpness: 0.06 + d * 0.10, maxTotal: Math.PI * 0.6, turned: 0 };
             }
         }
 
@@ -337,18 +340,18 @@
             this.lastX = candX;
             this.lastY = candY;
 
-            // Dynamic width — dramatic variation from very narrow to wide
-            const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty * 0.7);
-            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 25;
-            const widthPulse2 = Math.sin(this.segmentIndex * 0.012) * 15;
-            const widthJitter = (Math.random() - 0.5) * 8;
+            // Dynamic width — gentler narrowing for more playable roads
+            const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty * 0.5);
+            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 20;
+            const widthPulse2 = Math.sin(this.segmentIndex * 0.012) * 10;
+            const widthJitter = (Math.random() - 0.5) * 6;
             let patternNarrow = 0;
             if (this.pattern === PATTERN.HAIRPIN || this.pattern === PATTERN.SPIRAL) {
-                patternNarrow = -30 * (0.3 + this.difficulty);
+                patternNarrow = -15 * (0.3 + this.difficulty);
             } else if (this.pattern === PATTERN.CHICANE || this.pattern === PATTERN.SLALOM) {
-                patternNarrow = -20 * (0.3 + this.difficulty);
+                patternNarrow = -10 * (0.3 + this.difficulty);
             } else if (this.pattern === PATTERN.STRAIGHT) {
-                patternNarrow = 5;
+                patternNarrow = 8;
             }
             const trackW = clamp(baseW + widthPulse + widthPulse2 + widthJitter + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
 
@@ -782,10 +785,14 @@
         }
 
         getDir() {
-            if (this.leftDown && this.rightDown) return 0;
+            if (this.leftDown && this.rightDown) return 0; // braking — no steer
             if (this.leftDown) return -1;
             if (this.rightDown) return 1;
             return 0;
+        }
+
+        isBraking() {
+            return this.leftDown && this.rightDown;
         }
 
         consumeTap() {
@@ -984,6 +991,19 @@
                 ];
                 this._drawNeonLine(pts, '#ff3366', 4);
             }
+
+            // Start wall barrier (red glow behind starting point)
+            if (track.startWall) {
+                const sw = track.startWall;
+                const nx = Math.cos(sw.angle + Math.PI / 2);
+                const ny = Math.sin(sw.angle + Math.PI / 2);
+                const hw = sw.width / 2;
+                const pts = [
+                    { x: sw.x + nx * hw - camX, y: sw.y + ny * hw - camY },
+                    { x: sw.x - nx * hw - camX, y: sw.y - ny * hw - camY }
+                ];
+                this._drawNeonLine(pts, '#ff3366', 4);
+            }
         }
 
         _drawNeonLine(points, color, width) {
@@ -1068,7 +1088,7 @@
             ctx.restore();
         }
 
-        drawHUD(distance, timeLeft, highScore, speedMult, canvasW, timeFlash) {
+        drawHUD(distance, timeLeft, highScore, speedMult, canvasW, timeFlash, braking) {
             const ctx = this.ctx;
 
             // Distance (top-left)
@@ -1113,7 +1133,15 @@
             ctx.shadowBlur = 0;
 
             // Speed indicator (centered)
-            if (speedMult < 0.9) {
+            if (braking) {
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 16px monospace';
+                ctx.fillStyle = '#ff8800';
+                ctx.shadowColor = '#ff8800';
+                ctx.shadowBlur = 10;
+                ctx.fillText('BRAKE', canvasW / 2, 30);
+                ctx.shadowBlur = 0;
+            } else if (speedMult < 0.9) {
                 ctx.textAlign = 'center';
                 ctx.font = 'bold 14px monospace';
                 ctx.fillStyle = '#ff3366';
@@ -1208,7 +1236,7 @@
     // ============================================================
     // GAME
     // ============================================================
-    const STATE = { MENU: 0, PLAYING: 1, GAME_OVER: 2 };
+    const STATE = { MENU: 0, COUNTDOWN: 1, PLAYING: 2, GAME_OVER: 3 };
 
     class Game {
         constructor(canvas) {
@@ -1243,16 +1271,35 @@
             this.track.init(cx, cy);
             this.arrow.reset(cx, cy);
             this.tokens.reset();
-            this.distance = 0;          // distance in meters
+            this.distance = 0;
             this.timeLeft = CFG.START_TIME;
             this.isNewHigh = false;
             this.gameOverDelay = 0;
             this.lastSegPassed = 0;
-            this.peakSegIdx = 0;        // furthest segment reached (for backward detection)
-            this.backwardTimer = 0;     // frames spent going backward
+            this.peakSegIdx = 0;
+            this.backwardTimer = 0;
             this.timeFlash = 0;
             this.diedFromWall = false;
-            this.state = STATE.PLAYING;
+
+            // Place a wall behind the starting point so user can't turn back
+            const startSeg = this.track.spine[0];
+            if (startSeg) {
+                this.track.startWall = {
+                    x: startSeg.x,
+                    y: startSeg.y,
+                    angle: startSeg.angle,
+                    width: startSeg.width + 40
+                };
+            }
+
+            // Snap camera immediately to start position
+            const lookAheadDist = 80;
+            this.camX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist - this.canvas.width / 2;
+            this.camY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist - this.canvas.height / 2;
+
+            // Enter countdown state
+            this.countdownTimer = 90; // ~1.5 seconds at 60fps
+            this.state = STATE.COUNTDOWN;
         }
 
         die() {
@@ -1324,9 +1371,38 @@
             }
         }
 
+        checkStartWallCollision() {
+            const sw = this.track.startWall;
+            if (!sw) return;
+            const arrow = this.arrow;
+            const fwdX = Math.cos(sw.angle);
+            const fwdY = Math.sin(sw.angle);
+            const dx = arrow.x - sw.x;
+            const dy = arrow.y - sw.y;
+            const along = dx * fwdX + dy * fwdY;
+            const nx = -fwdY;
+            const ny = fwdX;
+            const lateral = Math.abs(dx * nx + dy * ny);
+            if (along < 0 && lateral < sw.width / 2) {
+                this.particles.emit(sw.x, sw.y, 15, '#ff3366', 1.5, 3, 25);
+                this.audio.wallHit();
+                this.diedFromWall = true;
+                this.die();
+            }
+        }
+
         updatePlaying(dt60) {
             const dir = this.input.getDir();
+            const braking = this.input.isBraking();
             this.arrow.update(dir, dt60);
+
+            // Braking: both sides pressed slows down
+            if (braking) {
+                this.arrow.speedMult = Math.max(
+                    CFG.BRAKE_MIN_SPEED,
+                    this.arrow.speedMult - CFG.BRAKE_DECEL * dt60
+                );
+            }
 
             // Drift sound management
             if (this.arrow.drifting && this.arrow.driftAmount > 0.1) {
@@ -1345,6 +1421,10 @@
 
             // Back wall collision (barrier at deleted track)
             this.checkBackWallCollision();
+            if (this.state !== STATE.PLAYING) return;
+
+            // Start wall collision (wall behind starting point)
+            this.checkStartWallCollision();
             if (this.state !== STATE.PLAYING) return;
 
             // Distance tracking: convert segments to meters
@@ -1418,6 +1498,13 @@
                     if (this.input.consumeTap()) this.startGame();
                     break;
 
+                case STATE.COUNTDOWN:
+                    this.countdownTimer -= dt60;
+                    if (this.countdownTimer <= 0) {
+                        this.state = STATE.PLAYING;
+                    }
+                    break;
+
                 case STATE.PLAYING:
                     this.updatePlaying(dt60);
                     break;
@@ -1451,13 +1538,36 @@
             this.particles.render(this.renderer.ctx, this.camX, this.camY);
 
             // Draw arrow
-            if (this.state === STATE.PLAYING) {
+            if (this.state === STATE.PLAYING || this.state === STATE.COUNTDOWN) {
                 this.renderer.drawArrow(this.arrow, this.camX, this.camY);
             }
 
             // HUD
             if (this.state === STATE.PLAYING) {
-                this.renderer.drawHUD(this.distance, this.timeLeft, this.highScore, this.arrow.speedMult, w, this.timeFlash);
+                const braking = this.input.isBraking();
+                this.renderer.drawHUD(this.distance, this.timeLeft, this.highScore, this.arrow.speedMult, w, this.timeFlash, braking);
+            }
+
+            // Countdown overlay
+            if (this.state === STATE.COUNTDOWN) {
+                const countNum = Math.ceil(this.countdownTimer / 60);
+                const pulse = 1 + 0.3 * Math.sin((this.countdownTimer % 60) / 60 * Math.PI);
+                const ctx = this.renderer.ctx;
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.fillRect(0, 0, w, h);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `bold ${Math.floor(80 * pulse)}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#00ffa0';
+                ctx.shadowBlur = 30;
+                ctx.fillText(countNum > 0 ? String(countNum) : 'GO!', w / 2, h / 2);
+                ctx.shadowBlur = 0;
+                ctx.font = '18px sans-serif';
+                ctx.fillStyle = '#aaaaaa';
+                ctx.fillText('GET READY', w / 2, h / 2 + 60);
+                ctx.restore();
             }
 
             if (this.state === STATE.GAME_OVER) {
