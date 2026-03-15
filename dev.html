@@ -18,7 +18,8 @@ body {
 
 #panel {
     width: 320px;
-    min-width: 320px;
+    min-width: 200px;
+    max-width: 600px;
     height: 100vh;
     overflow-y: auto;
     background: #12081e;
@@ -32,6 +33,17 @@ body {
 #panel::-webkit-scrollbar { width: 6px; }
 #panel::-webkit-scrollbar-track { background: #12081e; }
 #panel::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+#resize-handle {
+    width: 6px;
+    cursor: col-resize;
+    background: #222;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+#resize-handle:hover, #resize-handle.active {
+    background: #ff00ff;
+}
 
 #game-container {
     flex: 1;
@@ -80,7 +92,7 @@ h2 {
 }
 
 .param-row label {
-    flex: 0 0 110px;
+    flex: 0 0 100px;
     font-size: 10px;
     color: #aaa;
     text-overflow: ellipsis;
@@ -93,15 +105,33 @@ h2 {
     height: 14px;
     accent-color: #ff00ff;
     cursor: pointer;
+    min-width: 40px;
 }
 
-.param-row .val {
-    flex: 0 0 50px;
-    text-align: right;
-    font-size: 10px;
+.param-row input[type="number"] {
+    width: 58px;
+    flex: 0 0 58px;
+    background: #0a0014;
+    border: 1px solid #333;
+    border-radius: 2px;
     color: #ffee00;
+    font-family: inherit;
+    font-size: 10px;
     font-weight: bold;
+    padding: 2px 4px;
+    text-align: right;
 }
+.param-row input[type="number"]:focus {
+    border-color: #ff00ff;
+    outline: none;
+}
+/* Hide number spinners */
+.param-row input[type="number"]::-webkit-inner-spin-button,
+.param-row input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.param-row input[type="number"] { -moz-appearance: textfield; }
 
 .btn-row {
     display: flex;
@@ -124,10 +154,14 @@ h2 {
 }
 
 .btn:hover { background: #3a2a5a; }
+.btn.apply { border-color: #ff00ff; color: #ff00ff; font-size: 12px; }
+.btn.apply:hover { background: #4a2a6a; box-shadow: 0 0 8px #ff00ff44; }
 .btn.export { border-color: #00ffa0; color: #00ffa0; }
 .btn.import { border-color: #4488ff; color: #4488ff; }
 .btn.reset { border-color: #ff3366; color: #ff3366; }
 .btn.load { border-color: #ffaa00; color: #ffaa00; }
+
+.changed { border-color: #ff00ff !important; }
 
 #status {
     padding: 4px;
@@ -151,23 +185,25 @@ h2 {
     <h2>DRIFT ARROW DEV</h2>
 
     <div class="btn-row">
-        <button class="btn export" onclick="exportConfig()">Export JSON</button>
-        <button class="btn import" onclick="importConfig()">Import JSON</button>
-        <button class="btn reset" onclick="resetDefaults()">Reset</button>
+        <button class="btn apply" id="apply-btn" onclick="applyConfig()">APPLY CHANGES</button>
     </div>
     <div class="btn-row">
-        <button class="btn load" onclick="loadConfigFile()">Load config.json</button>
-        <button class="btn export" onclick="saveConfigFile()">Save config.json</button>
+        <button class="btn export" onclick="exportConfig()">Export</button>
+        <button class="btn import" onclick="importConfig()">Import</button>
+        <button class="btn reset" onclick="resetDefaults()">Reset</button>
     </div>
     <div id="status"></div>
 
     <div id="params"></div>
 
     <div class="controls-hint">
+        Click game area for keyboard input<br>
         A/D or Arrows: steer | Space: brake<br>
-        Changes apply in real-time. Export to save.
+        Drag edge to resize panel
     </div>
 </div>
+
+<div id="resize-handle"></div>
 
 <div id="game-container">
     <iframe id="game-frame" src="index.html"></iframe>
@@ -176,7 +212,6 @@ h2 {
 <script>
 // Default values — must match index.html exactly
 const DEFAULTS = {
-    // Arrow / Driving
     ARROW_SPEED: 3.5,
     STEER_RATE: 0.014,
     STEER_MAX: 0.045,
@@ -186,40 +221,26 @@ const DEFAULTS = {
     DRIFT_DRAG_SCALE: 0.008,
     ARROW_LENGTH: 22,
     ARROW_WIDTH: 10,
-
-    // Braking
     BRAKE_DECEL: 0.02,
     BRAKE_MIN_SPEED: 0.05,
-
-    // Speed Recovery
     SPEED_RECOVERY: 0.012,
     SPEED_RECOVERY_RELEASE: 0.06,
-
-    // Track Shape
     TRACK_WIDTH: 120,
     MIN_TRACK_WIDTH: 45,
     SEGMENT_LENGTH: 12,
     LOOK_AHEAD: 120,
     LOOK_BEHIND: 100,
     ANGLE_SMOOTH: 0.4,
-
-    // Overlap Avoidance
     OVERLAP_MARGIN: 15,
     SAFE_DIST_MULT: 3.5,
-
-    // Difficulty
     DIFFICULTY_RAMP: 0.00012,
     METERS_PER_SEGMENT: 0.03,
-
-    // Timer / Tokens
     START_TIME: 30,
     TIME_TOKEN_VALUE: 3.5,
     TOKEN_RADIUS: 10,
     TOKEN_MIN_GAP: 25,
     TOKEN_SPAWN_CHANCE: 0.025,
     TOKEN_NO_SPAWN_ZONE: 40,
-
-    // Hazards
     HAZARD_RADIUS: 10,
     HAZARD_EFFECT_DUR: 180,
     HAZARD_MIN_GAP: 10,
@@ -229,7 +250,6 @@ const DEFAULTS = {
     HAZARD_SPEED_MULT: 1.12,
 };
 
-// Parameter definitions: [key, label, min, max, step]
 const PARAM_SECTIONS = [
     { title: 'Arrow / Driving', params: [
         ['ARROW_SPEED', 'Speed', 1, 10, 0.1],
@@ -285,15 +305,19 @@ const PARAM_SECTIONS = [
     ]},
 ];
 
-// Current values
+// Current slider values (not yet applied)
 let current = { ...DEFAULTS };
+// Last applied values (what the game is actually using)
+let applied = { ...DEFAULTS };
+let hasUnapplied = false;
 
-// Try to load saved config from localStorage
+// Load saved config from localStorage
 try {
     const saved = localStorage.getItem('driftArrowDevConfig');
     if (saved) {
         const parsed = JSON.parse(saved);
         Object.assign(current, parsed);
+        Object.assign(applied, parsed);
     }
 } catch (e) {}
 
@@ -333,22 +357,46 @@ function buildUI() {
             slider.value = current[key];
             slider.id = 'slider-' + key;
 
-            const val = document.createElement('span');
-            val.className = 'val';
-            val.id = 'val-' + key;
-            val.textContent = formatVal(current[key], step);
+            const numInput = document.createElement('input');
+            numInput.type = 'number';
+            numInput.min = min;
+            numInput.max = max;
+            numInput.step = step;
+            numInput.value = current[key];
+            numInput.id = 'num-' + key;
 
+            // Slider changes update number input
             slider.addEventListener('input', () => {
                 const v = parseFloat(slider.value);
                 current[key] = v;
-                val.textContent = formatVal(v, step);
-                pushToGame();
-                autoSave();
+                numInput.value = v;
+                markChanged();
+            });
+
+            // Number input changes update slider
+            numInput.addEventListener('input', () => {
+                const v = parseFloat(numInput.value);
+                if (!isNaN(v)) {
+                    current[key] = v;
+                    slider.value = Math.max(min, Math.min(max, v));
+                    markChanged();
+                }
+            });
+
+            // Allow typing values outside slider range
+            numInput.addEventListener('change', () => {
+                const v = parseFloat(numInput.value);
+                if (!isNaN(v)) {
+                    current[key] = v;
+                    // Clamp slider but keep typed value
+                    slider.value = Math.max(min, Math.min(max, v));
+                    markChanged();
+                }
             });
 
             row.appendChild(lbl);
             row.appendChild(slider);
-            row.appendChild(val);
+            row.appendChild(numInput);
             body.appendChild(row);
         }
 
@@ -357,19 +405,31 @@ function buildUI() {
     }
 }
 
-function formatVal(v, step) {
-    if (step >= 1) return String(Math.round(v));
-    const decimals = Math.max(0, -Math.floor(Math.log10(step)));
-    return v.toFixed(Math.min(decimals, 5));
+function markChanged() {
+    hasUnapplied = true;
+    document.getElementById('apply-btn').classList.add('changed');
+    autoSave();
+}
+
+function applyConfig() {
+    pushToGame();
+    applied = { ...current };
+    hasUnapplied = false;
+    document.getElementById('apply-btn').classList.remove('changed');
+    showStatus('Config applied to game');
 }
 
 function pushToGame() {
     const iframe = document.getElementById('game-frame');
-    if (iframe.contentWindow && iframe.contentWindow.__DRIFT_CFG_LIVE) {
-        const cfg = iframe.contentWindow.__DRIFT_CFG_LIVE;
-        for (const key in current) {
-            cfg[key] = current[key];
+    try {
+        if (iframe.contentWindow && iframe.contentWindow.__DRIFT_CFG_LIVE) {
+            const cfg = iframe.contentWindow.__DRIFT_CFG_LIVE;
+            for (const key in current) {
+                cfg[key] = current[key];
+            }
         }
+    } catch (e) {
+        showStatus('Cannot access game iframe — same-origin required');
     }
 }
 
@@ -379,12 +439,14 @@ function autoSave() {
 
 function updateUIFromCurrent() {
     for (const section of PARAM_SECTIONS) {
-        for (const [key, , , , step] of section.params) {
+        for (const [key, , min, max, step] of section.params) {
             const slider = document.getElementById('slider-' + key);
-            const val = document.getElementById('val-' + key);
-            if (slider && val) {
-                slider.value = current[key];
-                val.textContent = formatVal(current[key], step);
+            const numInput = document.getElementById('num-' + key);
+            if (slider) {
+                slider.value = Math.max(min, Math.min(max, current[key]));
+            }
+            if (numInput) {
+                numInput.value = current[key];
             }
         }
     }
@@ -413,14 +475,12 @@ function importConfig() {
         reader.onload = () => {
             try {
                 const parsed = JSON.parse(reader.result);
-                // Only apply known keys
                 for (const key of Object.keys(DEFAULTS)) {
                     if (key in parsed) current[key] = parsed[key];
                 }
                 updateUIFromCurrent();
-                pushToGame();
-                autoSave();
-                showStatus('Config imported from ' + file.name);
+                markChanged();
+                showStatus('Imported ' + file.name + ' — click Apply to use');
             } catch (err) {
                 showStatus('Error: invalid JSON - ' + err.message);
             }
@@ -433,31 +493,8 @@ function importConfig() {
 function resetDefaults() {
     current = { ...DEFAULTS };
     updateUIFromCurrent();
-    pushToGame();
-    autoSave();
-    showStatus('Reset to defaults');
-}
-
-async function loadConfigFile() {
-    try {
-        const resp = await fetch('drift-config.json');
-        if (!resp.ok) throw new Error('No drift-config.json found (HTTP ' + resp.status + ')');
-        const parsed = await resp.json();
-        for (const key of Object.keys(DEFAULTS)) {
-            if (key in parsed) current[key] = parsed[key];
-        }
-        updateUIFromCurrent();
-        pushToGame();
-        autoSave();
-        showStatus('Loaded drift-config.json');
-    } catch (err) {
-        showStatus('Error: ' + err.message);
-    }
-}
-
-function saveConfigFile() {
-    exportConfig();
-    showStatus('Save drift-config.json to project root, game auto-loads it');
+    markChanged();
+    showStatus('Reset to defaults — click Apply to use');
 }
 
 function showStatus(msg) {
@@ -466,11 +503,80 @@ function showStatus(msg) {
     setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
 }
 
-// Push config to game iframe once it loads
+// ============================================================
+// KEYBOARD FORWARDING
+// ============================================================
+// Forward keyboard events from the parent page into the iframe
+// so the game receives input even when panel has focus
+const GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Space']);
+
+document.addEventListener('keydown', (e) => {
+    if (GAME_KEYS.has(e.code)) {
+        // Don't forward if user is typing in a number input
+        if (e.target.tagName === 'INPUT') return;
+        e.preventDefault();
+        forwardKeyEvent('keydown', e);
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    if (GAME_KEYS.has(e.code)) {
+        if (e.target.tagName === 'INPUT') return;
+        forwardKeyEvent('keyup', e);
+    }
+});
+
+function forwardKeyEvent(type, original) {
+    const iframe = document.getElementById('game-frame');
+    try {
+        const evt = new KeyboardEvent(type, {
+            code: original.code,
+            key: original.key,
+            bubbles: true,
+            cancelable: true,
+        });
+        iframe.contentDocument.dispatchEvent(evt);
+    } catch (e) { /* cross-origin */ }
+}
+
+// ============================================================
+// RESIZABLE PANEL
+// ============================================================
+const handle = document.getElementById('resize-handle');
+const panel = document.getElementById('panel');
+let resizing = false;
+
+handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    resizing = true;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    // Prevent iframe from capturing mouse during resize
+    document.getElementById('game-frame').style.pointerEvents = 'none';
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (!resizing) return;
+    const newWidth = Math.max(200, Math.min(600, e.clientX));
+    panel.style.width = newWidth + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+    if (!resizing) return;
+    resizing = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.getElementById('game-frame').style.pointerEvents = '';
+});
+
+// ============================================================
+// IFRAME LOAD
+// ============================================================
 const iframe = document.getElementById('game-frame');
 iframe.addEventListener('load', () => {
-    // Game has started — push current slider values into its live CFG
+    // Apply saved config on load
     pushToGame();
+    applied = { ...current };
     showStatus('Connected to game');
 });
 
