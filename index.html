@@ -720,17 +720,23 @@
     class HazardManager {
         constructor() {
             this.hazards = [];  // {x, y, segIdx, type, hit}
-            this.activeEffect = null; // {type, timer}
+            this.effectStack = 0; // positive = speed, negative = slow, 0 = neutral
+            this.effectTimer = 0;
+            this.lastSpawnSeg = 0;
         }
 
         reset() {
             this.hazards = [];
-            this.activeEffect = null;
+            this.effectStack = 0;
+            this.effectTimer = 0;
+            this.lastSpawnSeg = 0;
         }
 
         spawnOnSegment(seg, difficulty) {
             // Start spawning after some distance; ~2.5% chance per segment
             if (seg.index < 80) return;
+            // Enforce minimum 10-segment gap between hazards
+            if (seg.index - this.lastSpawnSeg < 10) return;
             const chance = 0.02 + difficulty * 0.015;
             if (Math.random() > chance) return;
             const nx = Math.cos(seg.angle + Math.PI / 2);
@@ -749,6 +755,7 @@
                 type: type,
                 hit: false
             });
+            this.lastSpawnSeg = seg.index;
         }
 
         cullBefore(minSegIdx) {
@@ -764,11 +771,27 @@
                     h.hit = true;
                     if (h.type === HAZARD.DEATH) return 'death';
                     if (h.type === HAZARD.SLOW) {
-                        this.activeEffect = { type: 'slow', timer: HAZARD_EFFECT_DUR };
+                        // Additive: slow cancels speed, stacking extends timer
+                        if (this.effectStack > 0) {
+                            // Cancel speed effect
+                            this.effectStack--;
+                            if (this.effectStack === 0) this.effectTimer = 0;
+                        } else {
+                            this.effectStack--;
+                            this.effectTimer = HAZARD_EFFECT_DUR; // reset/extend timer
+                        }
                         return 'slow';
                     }
                     if (h.type === HAZARD.SPEED) {
-                        this.activeEffect = { type: 'speed', timer: HAZARD_EFFECT_DUR };
+                        // Additive: speed cancels slow, stacking extends timer
+                        if (this.effectStack < 0) {
+                            // Cancel slow effect
+                            this.effectStack++;
+                            if (this.effectStack === 0) this.effectTimer = 0;
+                        } else {
+                            this.effectStack++;
+                            this.effectTimer = HAZARD_EFFECT_DUR; // reset/extend timer
+                        }
                         return 'speed';
                     }
                 }
@@ -777,17 +800,28 @@
         }
 
         update(dt60) {
-            if (this.activeEffect) {
-                this.activeEffect.timer -= dt60;
-                if (this.activeEffect.timer <= 0) this.activeEffect = null;
+            if (this.effectTimer > 0) {
+                this.effectTimer -= dt60;
+                if (this.effectTimer <= 0) {
+                    this.effectTimer = 0;
+                    this.effectStack = 0;
+                }
             }
         }
 
         getSpeedMult() {
-            if (!this.activeEffect) return 1;
-            if (this.activeEffect.type === 'slow') return 0.55;
-            if (this.activeEffect.type === 'speed') return 1.25;
+            if (this.effectStack === 0 || this.effectTimer <= 0) return 1;
+            if (this.effectStack < 0) return 0.55;  // slow
+            if (this.effectStack > 0) return 1.12;   // speed — gentle boost
             return 1;
+        }
+
+        getActiveEffect() {
+            if (this.effectStack === 0 || this.effectTimer <= 0) return null;
+            return {
+                type: this.effectStack < 0 ? 'slow' : 'speed',
+                timer: this.effectTimer
+            };
         }
 
         render(ctx, camX, camY) {
@@ -797,42 +831,65 @@
                 const sx = h.x - camX;
                 const sy = h.y - camY;
 
-                let color, symbol, glowColor;
+                let color, symbolColor, symbol, glowColor, strokeColor;
                 if (h.type === HAZARD.SLOW) {
                     color = '#4488ff';
-                    glowColor = 'rgba(68, 136, 255, 0.2)';
+                    glowColor = 'rgba(68, 136, 255, 0.15)';
+                    strokeColor = '#aaccff';
+                    symbolColor = '#ffffff';
                     symbol = '~';
                 } else if (h.type === HAZARD.SPEED) {
                     color = '#ffaa00';
-                    glowColor = 'rgba(255, 170, 0, 0.2)';
+                    glowColor = 'rgba(255, 170, 0, 0.15)';
+                    strokeColor = '#ffdd88';
+                    symbolColor = '#ffffff';
                     symbol = '>';
                 } else {
                     color = '#ff2244';
-                    glowColor = 'rgba(255, 34, 68, 0.25)';
+                    glowColor = 'rgba(255, 34, 68, 0.2)';
+                    strokeColor = '#ffffff';
+                    symbolColor = '#ffffff';
                     symbol = 'X';
                 }
 
                 const pulse = 0.85 + 0.15 * Math.sin(now * 5 + h.segIdx);
                 const r = HAZARD_RADIUS * pulse;
 
-                // Glow
+                // Outer glow
                 ctx.beginPath();
-                ctx.arc(sx, sy, r + 6, 0, Math.PI * 2);
+                ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
                 ctx.fillStyle = glowColor;
                 ctx.fill();
 
-                // Core
+                // Core fill
                 ctx.beginPath();
                 ctx.arc(sx, sy, r, 0, Math.PI * 2);
                 ctx.fillStyle = color;
                 ctx.shadowColor = color;
-                ctx.shadowBlur = 12;
+                ctx.shadowBlur = 15;
                 ctx.fill();
                 ctx.shadowBlur = 0;
 
-                // Symbol
-                ctx.fillStyle = '#000000';
-                ctx.font = 'bold ' + Math.floor(r * 1.3) + 'px monospace';
+                // Clear outline ring
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 1, 0, Math.PI * 2);
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Death gets extra warning ring
+                if (h.type === HAZARD.DEATH) {
+                    const dangerPulse = 0.5 + 0.5 * Math.sin(now * 8 + h.segIdx);
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, r + 5, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(255,255,255,' + (0.3 + dangerPulse * 0.5) + ')';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                }
+
+                // Symbol (white for contrast)
+                ctx.fillStyle = symbolColor;
+                ctx.font = 'bold ' + Math.floor(r * 1.4) + 'px monospace';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(symbol, sx, sy + 1);
@@ -1657,10 +1714,11 @@
             }
             this.hazards.update(dt60);
 
-            // Apply hazard speed effect
+            // Apply hazard speed effect — lerp toward target, not multiplicative
             const hazardMult = this.hazards.getSpeedMult();
             if (hazardMult !== 1) {
-                this.arrow.speedMult = clamp(this.arrow.speedMult * hazardMult, 0.1, 2.0);
+                const target = hazardMult;
+                this.arrow.speedMult = lerp(this.arrow.speedMult, target, 0.05 * dt60);
             }
 
             // Particles
@@ -1742,7 +1800,7 @@
             // HUD
             if (this.state === STATE.PLAYING) {
                 const braking = this.input.isBraking();
-                const hazardEffect = this.hazards.activeEffect;
+                const hazardEffect = this.hazards.getActiveEffect();
                 this.renderer.drawHUD(this.distance, this.timeLeft, this.highScore, this.arrow.speedMult, w, this.timeFlash, braking, hazardEffect);
             }
 
