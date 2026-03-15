@@ -1269,7 +1269,12 @@
             const cx = this.canvas.width / 2;
             const cy = this.canvas.height / 2 + 100;
             this.track.init(cx, cy);
-            this.arrow.reset(cx, cy);
+
+            // Place arrow a few segments ahead of the very start so the wall doesn't kill instantly
+            const spawnSeg = this.track.spine[Math.min(5, this.track.spine.length - 1)];
+            this.arrow.reset(spawnSeg.x, spawnSeg.y);
+            this.arrow.facing = spawnSeg.angle;
+            this.arrow.moveAngle = spawnSeg.angle;
             this.tokens.reset();
             this.distance = 0;
             this.timeLeft = CFG.START_TIME;
