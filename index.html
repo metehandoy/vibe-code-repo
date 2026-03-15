@@ -36,8 +36,8 @@
         ARROW_WIDTH: 10,
         TRACK_WIDTH: 120,
         MIN_TRACK_WIDTH: 45,
-        BRAKE_DECEL: 0.03,
-        BRAKE_MIN_SPEED: 0.35,
+        BRAKE_DECEL: 0.02,
+        BRAKE_MIN_SPEED: 0.05,
         SEGMENT_LENGTH: 12,
         LOOK_AHEAD: 120,
         LOOK_BEHIND: 100,
@@ -96,6 +96,7 @@
             this.pattern = PATTERN.STRAIGHT;
             this.patternStep = 0;
             this._cumAngle = 0;
+            this._lastDelta = 0;
             this._lastTurnDir = 0; // force alternation: next turn goes opposite
 
             for (let i = 0; i < CFG.LOOK_AHEAD + CFG.LOOK_BEHIND + 20; i++) {
@@ -212,9 +213,12 @@
             this.difficulty = Math.min(1, this.segmentIndex * CFG.DIFFICULTY_RAMP);
             const prevAngle = this.currentAngle;
 
+            // Track target angle change for smoothing
+            let targetDelta = 0;
+
             if (this.straightRemaining > 0) {
                 this.straightRemaining--;
-                this.currentAngle += (Math.random() - 0.5) * 0.01;
+                targetDelta = (Math.random() - 0.5) * 0.01;
                 // Decay cumulative angle during straights
                 this._cumAngle *= 0.85;
             } else if (this.turnRemaining > 0) {
@@ -228,12 +232,12 @@
                         if (this.patternData.turned > this.patternData.maxTotal) {
                             this.turnRemaining = 0;
                         } else {
-                            this.currentAngle += this.turnDir * cTurn;
+                            targetDelta = this.turnDir * cTurn;
                         }
                         break;
                     }
                     case PATTERN.CHICANE:
-                        this.currentAngle += this.turnDir * this.patternData.sharpness;
+                        targetDelta = this.turnDir * this.patternData.sharpness;
                         if (this.turnRemaining <= 0 && this.patternStep < this.patternData.turns) {
                             this.turnDir *= -1;
                             this.turnRemaining = this.patternData.segsPerTurn;
@@ -244,9 +248,9 @@
                         const hTurn = this.patternData.sharpness;
                         this.patternData.turned += hTurn;
                         if (this.patternData.turned > this.patternData.maxTotal) {
-                            this.turnRemaining = 0; // stop turning
+                            this.turnRemaining = 0;
                         } else {
-                            this.currentAngle += this.turnDir * hTurn;
+                            targetDelta = this.turnDir * hTurn;
                         }
                         break;
                     }
@@ -257,13 +261,13 @@
                         if (this.patternData.turned > this.patternData.maxTotal) {
                             this.turnRemaining = 0;
                         } else {
-                            this.currentAngle += this.turnDir * sTurn;
+                            targetDelta = this.turnDir * sTurn;
                         }
                         break;
                     }
                     case PATTERN.SLALOM: {
                         const wave = Math.sin(this.patternStep * this.patternData.freq) * this.patternData.amp;
-                        this.currentAngle += wave;
+                        targetDelta = wave;
                         break;
                     }
                 }
@@ -274,6 +278,12 @@
             } else {
                 this._pickPattern();
             }
+
+            // Smooth angle changes — blend toward target to prevent jagged walls
+            if (!this._lastDelta) this._lastDelta = 0;
+            const smoothed = lerp(this._lastDelta, targetDelta, 0.4);
+            this._lastDelta = smoothed;
+            this.currentAngle += smoothed;
 
             // Track cumulative angle — force straight if turning too much
             const angleDelta = this.currentAngle - prevAngle;
@@ -360,27 +370,34 @@
                 smoothW = lerp(this.spine[this.spine.length - 1].width, trackW, 0.12);
             }
 
-            this.spine.push({
+            const newSeg = {
                 x: this.lastX,
                 y: this.lastY,
                 angle: this.currentAngle,
                 width: smoothW,
                 index: this.segmentIndex
-            });
+            };
+            this.spine.push(newSeg);
+
+            // Notify callback for token/hazard spawning
+            if (this.onSegmentGenerated) {
+                this.onSegmentGenerated(newSeg, this.difficulty);
+            }
         }
 
         // Trim old segments and generate new ones
         update(arrowSegIdx) {
+            this.minSegIdx = this.spine.length > 0 ? this.spine[0].index : 0;
             // Remove segments far behind — store a back wall at the cut point
             while (this.spine.length > 0 && this.spine[0].index < arrowSegIdx - CFG.LOOK_BEHIND) {
                 const removed = this.spine.shift();
-                // Place a barrier wall at the last removed segment
                 this.backWall = {
                     x: removed.x,
                     y: removed.y,
                     angle: removed.angle,
-                    width: removed.width + 40 // slightly wider than track
+                    width: removed.width + 40
                 };
+                this.minSegIdx = this.spine.length > 0 ? this.spine[0].index : removed.index;
             }
             // Generate ahead
             const needed = arrowSegIdx + CFG.LOOK_AHEAD;
@@ -452,12 +469,12 @@
             this.driftTrail = [];
         }
 
-        update(inputDir, dt60) {
+        update(inputDir, dt60, braking) {
             // inputDir: -1 = left, 0 = none, +1 = right
             // INVERTED: tap right -> arrow nose turns LEFT (counter-clockwise)
             //           so the body drifts RIGHT (like counter-steering)
 
-            if (inputDir !== 0) {
+            if (inputDir !== 0 && !braking) {
                 // Steer the facing angle (inverted direction)
                 this.steerVel += (-inputDir) * CFG.STEER_RATE * dt60;
                 this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
@@ -497,17 +514,19 @@
             this.totalDistance += speed;
 
             // Recover speed: fast burst when releasing drift, slower while drifting
-            let recoveryRate;
-            if (inputDir === 0 && this.driftAmount < 0.15) {
-                // Not pressing and drift is settling — snap speed back quickly
-                recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
-            } else if (this.driftAmount < 0.05) {
-                recoveryRate = CFG.SPEED_RECOVERY * 2;
-            } else {
-                recoveryRate = CFG.SPEED_RECOVERY * 0.3;
-            }
-            if (this.speedMult < 1) {
-                this.speedMult = Math.min(1, this.speedMult + recoveryRate * dt60);
+            // No recovery while braking
+            if (!braking) {
+                let recoveryRate;
+                if (inputDir === 0 && this.driftAmount < 0.15) {
+                    recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
+                } else if (this.driftAmount < 0.05) {
+                    recoveryRate = CFG.SPEED_RECOVERY * 2;
+                } else {
+                    recoveryRate = CFG.SPEED_RECOVERY * 0.3;
+                }
+                if (this.speedMult < 1) {
+                    this.speedMult = Math.min(1, this.speedMult + recoveryRate * dt60);
+                }
             }
 
             // Wall hit timer
@@ -594,63 +613,44 @@
     // ============================================================
     // TIME TOKENS
     // ============================================================
+    // Hazard types for road dangers
+    const HAZARD = { SLOW: 0, SPEED: 1, DEATH: 2 };
+    const HAZARD_RADIUS = 10;
+    const HAZARD_EFFECT_DUR = 180; // 3 seconds at 60fps
+
     class TimeTokenManager {
         constructor() {
             this.tokens = [];  // {x, y, segIdx, collected, pulse}
-            this.lastSpawnSeg = 0;
             this.collectFlash = 0;
         }
 
         reset() {
             this.tokens = [];
-            this.lastSpawnSeg = 0;
             this.collectFlash = 0;
         }
 
-        // Strategically spawn tokens based on distance and difficulty
-        // Key insight: spawn rate adapts so the player can survive if they're
-        // good, but can't accumulate infinite time
-        trySpawn(track, arrowSegIdx, difficulty, timeLeft) {
-            // Base interval: every ~40 segments, decreasing slightly with difficulty
-            // but also adapts to how much time the player has left
-            const baseInterval = 35 - difficulty * 8; // 35 at start, 27 at max difficulty
-
-            // If player is low on time, spawn slightly more often (mercy)
-            // If player has lots of time, spawn less often (prevent hoarding)
-            let urgencyMod = 0;
-            if (timeLeft < 8) urgencyMod = -8;       // spawn sooner when desperate
-            else if (timeLeft < 15) urgencyMod = -3;  // gentle boost
-            else if (timeLeft > 25) urgencyMod = 10;  // slow down spawns when comfortable
-            else if (timeLeft > 35) urgencyMod = 20;  // really slow if hoarding
-
-            const interval = Math.max(15, baseInterval + urgencyMod);
-
-            if (arrowSegIdx - this.lastSpawnSeg >= interval) {
-                // Place token ahead on the track center with slight offset
-                const spawnAhead = 25 + Math.floor(Math.random() * 30);
-                const targetIdx = arrowSegIdx + spawnAhead;
-                const seg = track.getSegment(targetIdx);
-                if (seg) {
-                    // Offset from center so player has to navigate to it
-                    const nx = Math.cos(seg.angle + Math.PI / 2);
-                    const ny = Math.sin(seg.angle + Math.PI / 2);
-                    const offset = (Math.random() - 0.5) * seg.width * 0.5;
-                    this.tokens.push({
-                        x: seg.x + nx * offset,
-                        y: seg.y + ny * offset,
-                        segIdx: targetIdx,
-                        collected: false,
-                        pulse: Math.random() * Math.PI * 2
-                    });
-                    this.lastSpawnSeg = arrowSegIdx;
-                }
-            }
-
-            // Cull tokens far behind
-            this.tokens = this.tokens.filter(t => t.segIdx > arrowSegIdx - 10);
+        // Called by Track.generateNext when a new segment is created
+        spawnOnSegment(seg, difficulty) {
+            // ~3% chance per segment, tuned by difficulty
+            const chance = 0.025 + difficulty * 0.01;
+            if (Math.random() > chance) return;
+            const nx = Math.cos(seg.angle + Math.PI / 2);
+            const ny = Math.sin(seg.angle + Math.PI / 2);
+            const offset = (Math.random() - 0.5) * seg.width * 0.5;
+            this.tokens.push({
+                x: seg.x + nx * offset,
+                y: seg.y + ny * offset,
+                segIdx: seg.index,
+                collected: false,
+                pulse: Math.random() * Math.PI * 2
+            });
         }
 
-        // Check if arrow collects any tokens
+        // Remove tokens on segments that have been deleted
+        cullBefore(minSegIdx) {
+            this.tokens = this.tokens.filter(t => t.segIdx >= minSegIdx);
+        }
+
         checkCollect(arrowX, arrowY) {
             let timeGained = 0;
             for (const t of this.tokens) {
@@ -678,19 +678,16 @@
                 const pulse = 0.8 + 0.2 * Math.sin(now * 4 + t.pulse);
                 const r = CFG.TOKEN_RADIUS * pulse;
 
-                // Outer glow
                 ctx.beginPath();
                 ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(0, 255, 160, 0.1)';
                 ctx.fill();
 
-                // Inner glow
                 ctx.beginPath();
                 ctx.arc(sx, sy, r + 4, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(0, 255, 160, 0.2)';
                 ctx.fill();
 
-                // Core
                 ctx.beginPath();
                 ctx.arc(sx, sy, r, 0, Math.PI * 2);
                 ctx.fillStyle = '#00ffa0';
@@ -699,12 +696,139 @@
                 ctx.fill();
                 ctx.shadowBlur = 0;
 
-                // "+" symbol
                 ctx.fillStyle = '#003320';
                 ctx.font = 'bold ' + Math.floor(r * 1.2) + 'px monospace';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('+', sx, sy + 1);
+                ctx.textBaseline = 'alphabetic';
+                ctx.textAlign = 'left';
+            }
+        }
+    }
+
+    // ============================================================
+    // ROAD HAZARDS
+    // ============================================================
+    class HazardManager {
+        constructor() {
+            this.hazards = [];  // {x, y, segIdx, type, hit}
+            this.activeEffect = null; // {type, timer}
+        }
+
+        reset() {
+            this.hazards = [];
+            this.activeEffect = null;
+        }
+
+        spawnOnSegment(seg, difficulty) {
+            // Start spawning after some distance; ~2.5% chance per segment
+            if (seg.index < 80) return;
+            const chance = 0.02 + difficulty * 0.015;
+            if (Math.random() > chance) return;
+            const nx = Math.cos(seg.angle + Math.PI / 2);
+            const ny = Math.sin(seg.angle + Math.PI / 2);
+            const offset = (Math.random() - 0.5) * seg.width * 0.4;
+            // Pick type: death is rarer
+            let type;
+            const r = Math.random();
+            if (r < 0.35) type = HAZARD.SLOW;
+            else if (r < 0.70) type = HAZARD.SPEED;
+            else type = HAZARD.DEATH;
+            this.hazards.push({
+                x: seg.x + nx * offset,
+                y: seg.y + ny * offset,
+                segIdx: seg.index,
+                type: type,
+                hit: false
+            });
+        }
+
+        cullBefore(minSegIdx) {
+            this.hazards = this.hazards.filter(h => h.segIdx >= minSegIdx);
+        }
+
+        // Returns: null, 'slow', 'speed', or 'death'
+        checkCollision(arrowX, arrowY) {
+            for (const h of this.hazards) {
+                if (h.hit) continue;
+                const d = dist(arrowX, arrowY, h.x, h.y);
+                if (d < HAZARD_RADIUS + CFG.ARROW_LENGTH * 0.5) {
+                    h.hit = true;
+                    if (h.type === HAZARD.DEATH) return 'death';
+                    if (h.type === HAZARD.SLOW) {
+                        this.activeEffect = { type: 'slow', timer: HAZARD_EFFECT_DUR };
+                        return 'slow';
+                    }
+                    if (h.type === HAZARD.SPEED) {
+                        this.activeEffect = { type: 'speed', timer: HAZARD_EFFECT_DUR };
+                        return 'speed';
+                    }
+                }
+            }
+            return null;
+        }
+
+        update(dt60) {
+            if (this.activeEffect) {
+                this.activeEffect.timer -= dt60;
+                if (this.activeEffect.timer <= 0) this.activeEffect = null;
+            }
+        }
+
+        getSpeedMult() {
+            if (!this.activeEffect) return 1;
+            if (this.activeEffect.type === 'slow') return 0.55;
+            if (this.activeEffect.type === 'speed') return 1.6;
+            return 1;
+        }
+
+        render(ctx, camX, camY) {
+            const now = Date.now() / 1000;
+            for (const h of this.hazards) {
+                if (h.hit) continue;
+                const sx = h.x - camX;
+                const sy = h.y - camY;
+
+                let color, symbol, glowColor;
+                if (h.type === HAZARD.SLOW) {
+                    color = '#4488ff';
+                    glowColor = 'rgba(68, 136, 255, 0.2)';
+                    symbol = '~';
+                } else if (h.type === HAZARD.SPEED) {
+                    color = '#ffaa00';
+                    glowColor = 'rgba(255, 170, 0, 0.2)';
+                    symbol = '>';
+                } else {
+                    color = '#ff2244';
+                    glowColor = 'rgba(255, 34, 68, 0.25)';
+                    symbol = 'X';
+                }
+
+                const pulse = 0.85 + 0.15 * Math.sin(now * 5 + h.segIdx);
+                const r = HAZARD_RADIUS * pulse;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 6, 0, Math.PI * 2);
+                ctx.fillStyle = glowColor;
+                ctx.fill();
+
+                // Core
+                ctx.beginPath();
+                ctx.arc(sx, sy, r, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 12;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Symbol
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold ' + Math.floor(r * 1.3) + 'px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(symbol, sx, sy + 1);
                 ctx.textBaseline = 'alphabetic';
                 ctx.textAlign = 'left';
             }
@@ -1088,7 +1212,7 @@
             ctx.restore();
         }
 
-        drawHUD(distance, timeLeft, highScore, speedMult, canvasW, timeFlash, braking) {
+        drawHUD(distance, timeLeft, highScore, speedMult, canvasW, timeFlash, braking, hazardEffect) {
             const ctx = this.ctx;
 
             // Distance (top-left)
@@ -1148,6 +1272,25 @@
                 ctx.fillText('SLOW', canvasW / 2, 30);
             }
 
+            // Hazard effect indicator
+            if (hazardEffect) {
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 14px monospace';
+                const remaining = Math.ceil(hazardEffect.timer / 60);
+                if (hazardEffect.type === 'slow') {
+                    ctx.fillStyle = '#4488ff';
+                    ctx.shadowColor = '#4488ff';
+                    ctx.shadowBlur = 8;
+                    ctx.fillText('SLOWED ' + remaining + 's', canvasW / 2, 50);
+                } else if (hazardEffect.type === 'speed') {
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.shadowColor = '#ffaa00';
+                    ctx.shadowBlur = 8;
+                    ctx.fillText('BOOST ' + remaining + 's', canvasW / 2, 50);
+                }
+                ctx.shadowBlur = 0;
+            }
+
             ctx.textAlign = 'left';
         }
 
@@ -1177,19 +1320,23 @@
             ctx.font = '16px monospace';
             ctx.fillText('Tap left/right to drift', canvasW / 2, canvasH / 2 + 40);
 
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.font = '13px monospace';
+            ctx.fillText('Hold both sides to brake', canvasW / 2, canvasH / 2 + 58);
+
             ctx.fillStyle = 'rgba(0,255,160,0.5)';
             ctx.font = '13px monospace';
-            ctx.fillText('Collect + tokens to stay alive', canvasW / 2, canvasH / 2 + 60);
+            ctx.fillText('Collect + tokens \u2022 Avoid hazards', canvasW / 2, canvasH / 2 + 76);
 
             const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
             ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + pulse * 0.6) + ')';
             ctx.font = 'bold 20px monospace';
-            ctx.fillText('TAP TO START', canvasW / 2, canvasH / 2 + 90);
+            ctx.fillText('TAP TO START', canvasW / 2, canvasH / 2 + 106);
 
             if (highScore > 0) {
                 ctx.fillStyle = '#ffee00';
                 ctx.font = '15px monospace';
-                ctx.fillText('RECORD: ' + this._formatDist(highScore), canvasW / 2, canvasH / 2 + 130);
+                ctx.fillText('RECORD: ' + this._formatDist(highScore), canvasW / 2, canvasH / 2 + 145);
             }
 
             ctx.textAlign = 'left';
@@ -1248,6 +1395,7 @@
             this.track = new Track();
             this.arrow = new Arrow();
             this.tokens = new TimeTokenManager();
+            this.hazards = new HazardManager();
             this.state = STATE.MENU;
             this.highScore = parseInt(localStorage.getItem('driftArrowHigh') || '0', 10);
             this.distance = 0;
@@ -1268,6 +1416,15 @@
             this.audio.init();
             const cx = this.canvas.width / 2;
             const cy = this.canvas.height / 2 + 100;
+            this.tokens.reset();
+            this.hazards.reset();
+
+            // Set up segment generation callback for tokens and hazards
+            this.track.onSegmentGenerated = (seg, diff) => {
+                this.tokens.spawnOnSegment(seg, diff);
+                this.hazards.spawnOnSegment(seg, diff);
+            };
+
             this.track.init(cx, cy);
 
             // Place arrow a few segments ahead of the very start so the wall doesn't kill instantly
@@ -1275,7 +1432,6 @@
             this.arrow.reset(spawnSeg.x, spawnSeg.y);
             this.arrow.facing = spawnSeg.angle;
             this.arrow.moveAngle = spawnSeg.angle;
-            this.tokens.reset();
             this.distance = 0;
             this.timeLeft = CFG.START_TIME;
             this.isNewHigh = false;
@@ -1399,9 +1555,9 @@
         updatePlaying(dt60) {
             const dir = this.input.getDir();
             const braking = this.input.isBraking();
-            this.arrow.update(dir, dt60);
+            this.arrow.update(dir, dt60, braking);
 
-            // Braking: both sides pressed slows down
+            // Braking: both sides pressed slows down gradually to near-stop
             if (braking) {
                 this.arrow.speedMult = Math.max(
                     CFG.BRAKE_MIN_SPEED,
@@ -1417,8 +1573,14 @@
                 this.audio.stopDrift();
             }
 
-            // Update track
+            // Update track (generates new segments via callback, culls old ones)
             this.track.update(this.arrow.currentSegIdx);
+
+            // Cull tokens and hazards on deleted segments
+            if (this.track.minSegIdx) {
+                this.tokens.cullBefore(this.track.minSegIdx);
+                this.hazards.cullBefore(this.track.minSegIdx);
+            }
 
             // Wall collision
             this.checkWallCollision();
@@ -1463,8 +1625,7 @@
                 return;
             }
 
-            // Time tokens: spawn and collect
-            this.tokens.trySpawn(this.track, this.arrow.currentSegIdx, this.track.difficulty, this.timeLeft);
+            // Time tokens: collect (spawning handled by track callback)
             const gained = this.tokens.checkCollect(this.arrow.x, this.arrow.y);
             if (gained > 0) {
                 this.timeLeft += gained;
@@ -1473,6 +1634,27 @@
                 this.particles.emit(this.arrow.x, this.arrow.y, 12, '#00ffa0', 1.2, 3, 20);
             }
             this.tokens.update(dt60);
+
+            // Road hazards: check collision
+            const hazardHit = this.hazards.checkCollision(this.arrow.x, this.arrow.y);
+            if (hazardHit === 'death') {
+                this.particles.emit(this.arrow.x, this.arrow.y, 25, '#ff2244', 1.5, 4, 35);
+                this.audio.wallHit();
+                this.diedFromWall = true;
+                this.die();
+                return;
+            } else if (hazardHit === 'slow') {
+                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#4488ff', 1, 2, 15);
+            } else if (hazardHit === 'speed') {
+                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#ffaa00', 1, 2, 15);
+            }
+            this.hazards.update(dt60);
+
+            // Apply hazard speed effect
+            const hazardMult = this.hazards.getSpeedMult();
+            if (hazardMult !== 1) {
+                this.arrow.speedMult = clamp(this.arrow.speedMult * hazardMult, 0.1, 2.0);
+            }
 
             // Particles
             this.particles.update(dt60);
@@ -1539,6 +1721,9 @@
             // Draw time tokens
             this.tokens.render(this.renderer.ctx, this.camX, this.camY);
 
+            // Draw hazards
+            this.hazards.render(this.renderer.ctx, this.camX, this.camY);
+
             // Draw particles
             this.particles.render(this.renderer.ctx, this.camX, this.camY);
 
@@ -1550,7 +1735,8 @@
             // HUD
             if (this.state === STATE.PLAYING) {
                 const braking = this.input.isBraking();
-                this.renderer.drawHUD(this.distance, this.timeLeft, this.highScore, this.arrow.speedMult, w, this.timeFlash, braking);
+                const hazardEffect = this.hazards.activeEffect;
+                this.renderer.drawHUD(this.distance, this.timeLeft, this.highScore, this.arrow.speedMult, w, this.timeFlash, braking, hazardEffect);
             }
 
             // Countdown overlay
