@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run collision tests in headless browser
+        run: |
+          # Install a lightweight static file server and Puppeteer
+          npm install --no-save puppeteer serve
+
+          # Start a local server in the background
+          npx serve . -l 8080 &
+          SERVER_PID=$!
+          sleep 2
+
+          # Run the tests using Puppeteer and capture console output
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+
+            let testOutput = '';
+            let hasFailed = false;
+
+            page.on('console', msg => {
+              const text = msg.text();
+              console.log(text);
+              testOutput += text + '\n';
+            });
+
+            page.on('pageerror', err => {
+              console.error('Page error:', err.message);
+              hasFailed = true;
+            });
+
+            await page.goto('http://localhost:8080/tests/collision-tests.html', {
+              waitUntil: 'networkidle0',
+              timeout: 30000
+            });
+
+            // Wait for tests to complete
+            await page.waitForSelector('.summary', { timeout: 15000 });
+
+            const allPass = await page.evaluate(() => {
+              const summary = document.querySelector('.summary');
+              return summary && summary.classList.contains('all-pass');
+            });
+
+            await browser.close();
+
+            if (!allPass || hasFailed) {
+              console.error('\nTests FAILED');
+              process.exit(1);
+            }
+            console.log('\nAll tests passed');
+          })();
+          "
+
+          # Clean up server
+          kill $SERVER_PID 2>/dev/null || true
+
+  validate-html:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check game file exists and is valid
+        run: |
+          # Ensure index.html exists and is non-empty
+          if [ ! -s index.html ]; then
+            echo "ERROR: index.html is missing or empty"
+            exit 1
+          fi
+
+          # Basic syntax check - ensure the HTML has required structure
+          grep -q '<canvas' index.html || { echo "ERROR: No canvas element found"; exit 1; }
+          grep -q "'use strict'" index.html || { echo "ERROR: Missing 'use strict' directive"; exit 1; }
+          grep -q 'class Game' index.html || { echo "ERROR: Game class not found"; exit 1; }
+
+          echo "HTML validation passed"
