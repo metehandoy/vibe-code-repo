@@ -73,6 +73,19 @@
         const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
         return dist(px, py, ax + t * dx, ay + t * dy);
     }
+    // Min distance from point to arrow's two outer wing edges (tip→backLeft, tip→backRight)
+    function distToArrowWings(px, py, arrowX, arrowY, facing) {
+        const cos = Math.cos(facing), sin = Math.sin(facing);
+        const nx = -sin, ny = cos; // perpendicular
+        const tipX = arrowX + cos * CFG.ARROW_LENGTH * 0.6;
+        const tipY = arrowY + sin * CFG.ARROW_LENGTH * 0.6;
+        const backX = arrowX - cos * CFG.ARROW_LENGTH * 0.4;
+        const backY = arrowY - sin * CFG.ARROW_LENGTH * 0.4;
+        const hw = CFG.ARROW_WIDTH / 2;
+        const d1 = distPointToSeg(px, py, tipX, tipY, backX + nx * hw, backY + ny * hw);
+        const d2 = distPointToSeg(px, py, tipX, tipY, backX - nx * hw, backY - ny * hw);
+        return Math.min(d1, d2);
+    }
 
     // ============================================================
     // PROCEDURAL TRACK
@@ -701,13 +714,9 @@
 
         checkCollect(arrowX, arrowY, arrowFacing) {
             let timeGained = 0;
-            const tipX = arrowX + Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
-            const tipY = arrowY + Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
-            const tailX = arrowX - Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
-            const tailY = arrowY - Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
             for (const t of this.tokens) {
                 if (t.collected) continue;
-                const d = distPointToSeg(t.x, t.y, tailX, tailY, tipX, tipY);
+                const d = distToArrowWings(t.x, t.y, arrowX, arrowY, arrowFacing);
                 if (d < CFG.TOKEN_RADIUS) {
                     t.collected = true;
                     timeGained += CFG.TIME_TOKEN_VALUE;
@@ -808,17 +817,10 @@
 
         // Returns: null, 'slow', 'speed', or 'death'
         checkCollision(arrowX, arrowY, arrowFacing) {
-            const tipX = arrowX + Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
-            const tipY = arrowY + Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
-            const tailX = arrowX - Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
-            const tailY = arrowY - Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
             for (const h of this.hazards) {
                 if (h.hit) continue;
-                // Death: tip-only collision for pixel-perfect feel
-                // Speed/Slow: full spine collision (forgiving pickups)
-                const d = h.type === HAZARD.DEATH
-                    ? dist(h.x, h.y, tipX, tipY)
-                    : distPointToSeg(h.x, h.y, tailX, tailY, tipX, tipY);
+                // Check distance from hazard center to arrow's two wing edges
+                const d = distToArrowWings(h.x, h.y, arrowX, arrowY, arrowFacing);
                 if (d < CFG.HAZARD_RADIUS) {
                     h.hit = true;
                     if (h.type === HAZARD.DEATH) return 'death';
