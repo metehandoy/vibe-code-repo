@@ -499,14 +499,17 @@
             this.drifting = false;
             this.driftAmount = 0;          // how much we're sliding (for visuals)
             this.driftTrail = [];
+            this.brakeTrail = [];
         }
 
         update(inputDir, dt60, braking) {
             // inputDir: -1 = left, 0 = none, +1 = right
             // Direct controls: tap left = turn left, tap right = turn right
 
-            if (inputDir !== 0 && !braking) {
-                // Steer the facing angle
+            const driftBraking = inputDir !== 0 && braking;
+
+            if (inputDir !== 0) {
+                // Steer the facing angle (allowed during drift+brake too)
                 this.steerVel += inputDir * CFG.STEER_RATE * dt60;
                 this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
             } else {
@@ -518,7 +521,8 @@
             // Apply steering to facing angle
             this.facing += this.steerVel * dt60;
 
-            // When not pressing, gradually realign facing to movement direction
+            // When not pressing direction, gradually realign facing to movement direction
+            // (This happens even while braking alone — only drift+brake locks the angle)
             if (inputDir === 0) {
                 const diff = angleDiff(this.facing, this.moveAngle);
                 this.facing += diff * CFG.REALIGN_RATE * dt60;
@@ -526,8 +530,11 @@
 
             // Movement: velocity direction slowly catches up to facing direction
             // This is the core drift mechanic — low GRIP = more sliding
+            // During drift+brake, freeze the drift angle by skipping grip adjustment
             const diff = angleDiff(this.moveAngle, this.facing);
-            this.moveAngle += diff * CFG.GRIP * dt60;
+            if (!driftBraking) {
+                this.moveAngle += diff * CFG.GRIP * dt60;
+            }
 
             // Calculate drift amount (angle between facing and movement)
             this.driftAmount = Math.abs(angleDiff(this.facing, this.moveAngle));
@@ -594,11 +601,35 @@
                 });
             }
 
-            // Age and cull trail
+            // Brake trail — emit tyre marks from rear wheels when braking
+            if (braking && this.speedMult > CFG.BRAKE_MIN_SPEED + 0.01) {
+                const backX = this.x - Math.cos(this.facing) * CFG.ARROW_LENGTH * 0.4;
+                const backY = this.y - Math.sin(this.facing) * CFG.ARROW_LENGTH * 0.4;
+                const nx = Math.cos(this.facing + Math.PI / 2);
+                const ny = Math.sin(this.facing + Math.PI / 2);
+                this.brakeTrail.push({
+                    x: backX + nx * CFG.ARROW_WIDTH * 0.35,
+                    y: backY + ny * CFG.ARROW_WIDTH * 0.35,
+                    age: 0
+                });
+                this.brakeTrail.push({
+                    x: backX - nx * CFG.ARROW_WIDTH * 0.35,
+                    y: backY - ny * CFG.ARROW_WIDTH * 0.35,
+                    age: 0
+                });
+            }
+
+            // Age and cull trails
             for (let i = this.driftTrail.length - 1; i >= 0; i--) {
                 this.driftTrail[i].age += dt60;
                 if (this.driftTrail[i].age > 40) {
                     this.driftTrail.splice(i, 1);
+                }
+            }
+            for (let i = this.brakeTrail.length - 1; i >= 0; i--) {
+                this.brakeTrail[i].age += dt60;
+                if (this.brakeTrail[i].age > 80) {
+                    this.brakeTrail.splice(i, 1);
                 }
             }
         }
@@ -1208,7 +1239,7 @@
             ctx.fill();
 
             // Center dashes (give sense of speed on straights)
-            ctx.strokeStyle = 'rgba(100, 50, 180, 0.25)';
+            ctx.strokeStyle = 'rgba(180, 100, 255, 0.55)';
             ctx.lineWidth = 2;
             for (let i = 0; i < spine.length; i++) {
                 const seg = spine[i];
@@ -1312,6 +1343,15 @@
             const a = arrow.angle;
             const len = CFG.ARROW_LENGTH;
             const hw = CFG.ARROW_WIDTH / 2;
+
+            // Brake tyre marks
+            for (const t of arrow.brakeTrail) {
+                const alpha = clamp(1 - t.age / 80, 0, 1) * 0.35;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(t.x - camX - 2, t.y - camY - 2, 4, 4);
+            }
+            ctx.globalAlpha = 1;
 
             // Drift trail
             for (const t of arrow.driftTrail) {
