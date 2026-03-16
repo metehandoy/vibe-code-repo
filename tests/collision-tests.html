@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drift Arrow – Collision Tests</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+        .pass { color: #0f0; }
+        .fail { color: #f33; font-weight: bold; }
+        h2 { color: #0ff; margin-top: 24px; }
+        .summary { margin-top: 20px; padding: 10px; border: 2px solid; font-size: 16px; }
+        .summary.all-pass { border-color: #0f0; }
+        .summary.has-fail { border-color: #f33; }
+    </style>
+</head>
+<body>
+<h1>Drift Arrow – Collision Tests</h1>
+<div id="results"></div>
+<script>
+'use strict';
+
+// ============================================================
+// Extracted game utilities and config for testing
+// ============================================================
+const CFG = {
+    ARROW_SPEED: 3.5,
+    ARROW_LENGTH: 22,
+    ARROW_WIDTH: 10,
+    TRACK_WIDTH: 140,
+    MIN_TRACK_WIDTH: 38,
+    TOKEN_RADIUS: 12,
+    HAZARD_RADIUS: 10,
+    DEATH_HAZARD_RADIUS: 5,
+    TIME_TOKEN_VALUE: 4,
+    HAZARD_EFFECT_DUR: 180,
+    HAZARD_SLOW_MULT: 0.55,
+    HAZARD_SPEED_MULT: 1.35
+};
+
+const HAZARD = { SLOW: 0, SPEED: 1, DEATH: 2 };
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(x1, y1, x2, y2) { return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2); }
+
+function distPointToSeg(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return dist(px, py, ax, ay);
+    const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
+    return dist(px, py, ax + t * dx, ay + t * dy);
+}
+
+function distToArrowWings(px, py, arrowX, arrowY, facing) {
+    const cos = Math.cos(facing), sin = Math.sin(facing);
+    const nx = -sin, ny = cos;
+    const tipX = arrowX + cos * CFG.ARROW_LENGTH * 0.6;
+    const tipY = arrowY + sin * CFG.ARROW_LENGTH * 0.6;
+    const backX = arrowX - cos * CFG.ARROW_LENGTH * 0.4;
+    const backY = arrowY - sin * CFG.ARROW_LENGTH * 0.4;
+    const hw = CFG.ARROW_WIDTH / 2;
+    const d1 = distPointToSeg(px, py, tipX, tipY, backX + nx * hw, backY + ny * hw);
+    const d2 = distPointToSeg(px, py, tipX, tipY, backX - nx * hw, backY - ny * hw);
+    return Math.min(d1, d2);
+}
+
+// Arrow wing corner positions (matching visual rendering)
+function getArrowCorners(arrowX, arrowY, facing) {
+    const cos = Math.cos(facing), sin = Math.sin(facing);
+    const nx = -sin, ny = cos;
+    const len = CFG.ARROW_LENGTH;
+    const hw = CFG.ARROW_WIDTH / 2;
+    return {
+        tip:  [arrowX + cos * len * 0.6, arrowY + sin * len * 0.6],
+        backLeft:  [arrowX - cos * len * 0.4 - nx * hw, arrowY - sin * len * 0.4 - ny * hw],
+        backRight: [arrowX - cos * len * 0.4 + nx * hw, arrowY - sin * len * 0.4 + ny * hw]
+    };
+}
+
+// Wall collision check (mirrors Game.checkWallCollision)
+function checkWallCollision(arrowX, arrowY, arrowFacing, segX, segY, segAngle, segWidth) {
+    const nx = Math.cos(segAngle + Math.PI / 2);
+    const ny = Math.sin(segAngle + Math.PI / 2);
+    const hw = segWidth / 2;
+
+    const corners = getArrowCorners(arrowX, arrowY, arrowFacing);
+    const points = [corners.tip, corners.backLeft, corners.backRight];
+
+    for (const pt of points) {
+        const dx = pt[0] - segX;
+        const dy = pt[1] - segY;
+        const cross = dx * nx + dy * ny;
+        if (Math.abs(cross) > hw) {
+            return true; // wall hit
+        }
+    }
+    return false;
+}
+
+// Token collect check (mirrors TimeTokenManager.checkCollect)
+function checkTokenCollect(tokenX, tokenY, arrowX, arrowY, arrowFacing) {
+    const d = distToArrowWings(tokenX, tokenY, arrowX, arrowY, arrowFacing);
+    return d < CFG.TOKEN_RADIUS;
+}
+
+// Hazard collision check (mirrors HazardManager.checkCollision)
+function checkHazardCollision(hazardX, hazardY, hazardType, arrowX, arrowY, arrowFacing) {
+    const d = distToArrowWings(hazardX, hazardY, arrowX, arrowY, arrowFacing);
+    const radius = hazardType === HAZARD.DEATH ? CFG.DEATH_HAZARD_RADIUS : CFG.HAZARD_RADIUS;
+    return d < radius;
+}
+
+// ============================================================
+// Test runner
+// ============================================================
+let totalTests = 0;
+let passedTests = 0;
+const resultsEl = document.getElementById('results');
+
+function section(name) {
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    resultsEl.appendChild(h2);
+}
+
+function assert(condition, description) {
+    totalTests++;
+    const div = document.createElement('div');
+    if (condition) {
+        passedTests++;
+        div.className = 'pass';
+        div.textContent = `  PASS: ${description}`;
+    } else {
+        div.className = 'fail';
+        div.textContent = `  FAIL: ${description}`;
+    }
+    resultsEl.appendChild(div);
+}
+
+function assertApprox(actual, expected, tolerance, description) {
+    assert(Math.abs(actual - expected) < tolerance, `${description} (got ${actual.toFixed(4)}, expected ~${expected})`);
+}
+
+// ============================================================
+// TEST: Arrow wing geometry matches visual rendering
+// ============================================================
+section('Arrow Wing Geometry');
+
+(() => {
+    // Arrow facing right (angle = 0)
+    const corners = getArrowCorners(0, 0, 0);
+    const len = CFG.ARROW_LENGTH;
+    const hw = CFG.ARROW_WIDTH / 2;
+
+    // Tip should be at (len*0.6, 0) = (13.2, 0)
+    assertApprox(corners.tip[0], len * 0.6, 0.001, 'Tip X for facing=0');
+    assertApprox(corners.tip[1], 0, 0.001, 'Tip Y for facing=0');
+
+    // Back-left should be at (-len*0.4, -hw) = (-8.8, -5)
+    assertApprox(corners.backLeft[0], -len * 0.4, 0.001, 'Back-left X for facing=0');
+    assertApprox(corners.backLeft[1], -hw, 0.001, 'Back-left Y for facing=0');
+
+    // Back-right should be at (-len*0.4, hw) = (-8.8, 5)
+    assertApprox(corners.backRight[0], -len * 0.4, 0.001, 'Back-right X for facing=0');
+    assertApprox(corners.backRight[1], hw, 0.001, 'Back-right Y for facing=0');
+})();
+
+(() => {
+    // Arrow facing up (angle = -PI/2)
+    const corners = getArrowCorners(100, 100, -Math.PI / 2);
+    const len = CFG.ARROW_LENGTH;
+    const hw = CFG.ARROW_WIDTH / 2;
+
+    // Tip should be at (100, 100 - len*0.6)
+    assertApprox(corners.tip[0], 100, 0.001, 'Tip X for facing=-PI/2');
+    assertApprox(corners.tip[1], 100 - len * 0.6, 0.001, 'Tip Y for facing=-PI/2');
+
+    // Back-left and back-right should be symmetrically below
+    assertApprox(corners.backLeft[1], 100 + len * 0.4, 0.001, 'Back-left Y for facing=-PI/2');
+    assertApprox(corners.backRight[1], 100 + len * 0.4, 0.001, 'Back-right Y for facing=-PI/2');
+    assertApprox(corners.backLeft[0], 100 - hw, 0.001, 'Back-left X for facing=-PI/2');
+    assertApprox(corners.backRight[0], 100 + hw, 0.001, 'Back-right X for facing=-PI/2');
+})();
+
+// ============================================================
+// TEST: distToArrowWings returns correct distances
+// ============================================================
+section('distToArrowWings Distance Checks');
+
+(() => {
+    // Arrow at origin facing right
+    const facing = 0;
+    const ax = 0, ay = 0;
+    const len = CFG.ARROW_LENGTH;
+    const hw = CFG.ARROW_WIDTH / 2;
+
+    // Point exactly on the tip should have distance 0
+    const dTip = distToArrowWings(len * 0.6, 0, ax, ay, facing);
+    assertApprox(dTip, 0, 0.001, 'Distance to point at tip = 0');
+
+    // Point exactly on back-right corner
+    const dBackR = distToArrowWings(-len * 0.4, hw, ax, ay, facing);
+    assertApprox(dBackR, 0, 0.001, 'Distance to point at back-right wing = 0');
+
+    // Point exactly on back-left corner
+    const dBackL = distToArrowWings(-len * 0.4, -hw, ax, ay, facing);
+    assertApprox(dBackL, 0, 0.001, 'Distance to point at back-left wing = 0');
+
+    // Point far away should have large distance
+    const dFar = distToArrowWings(100, 100, ax, ay, facing);
+    assert(dFar > 50, 'Distance to far point is large');
+
+    // Point directly above center of arrow (perpendicular)
+    // Should be close to the nearest wing edge
+    const dAbove = distToArrowWings(0, 20, ax, ay, facing);
+    assert(dAbove > 10, 'Distance to point 20 above center is > 10');
+
+    // Point on the wing edge midpoint (halfway along left wing)
+    const midX = (len * 0.6 + (-len * 0.4)) / 2; // midpoint x of wing edge
+    const midY = (-hw) / 2; // midpoint y between tip(0) and backLeft(-hw) — not exact, but approximate
+    // Actually compute exact midpoint of the left wing segment
+    const tipX = len * 0.6, tipY = 0;
+    const blX = -len * 0.4, blY = -hw;
+    const eMidX = (tipX + blX) / 2, eMidY = (tipY + blY) / 2;
+    const dMid = distToArrowWings(eMidX, eMidY, ax, ay, facing);
+    assertApprox(dMid, 0, 0.01, 'Distance to midpoint of left wing edge = 0');
+})();
+
+// ============================================================
+// TEST: Token collection
+// ============================================================
+section('Token Collection');
+
+(() => {
+    // Arrow at origin facing right
+    const ax = 0, ay = 0, facing = 0;
+
+    // Token right at the tip — should collect
+    assert(checkTokenCollect(CFG.ARROW_LENGTH * 0.6, 0, ax, ay, facing),
+        'Token at arrow tip is collected');
+
+    // Token right at back-right wing — should collect
+    assert(checkTokenCollect(-CFG.ARROW_LENGTH * 0.4, CFG.ARROW_WIDTH / 2, ax, ay, facing),
+        'Token at back-right wing is collected');
+
+    // Token very far from arrow — should NOT collect
+    assert(!checkTokenCollect(200, 200, ax, ay, facing),
+        'Token far away is NOT collected');
+
+    // Token just outside token radius from wing edge
+    const outsideDist = CFG.TOKEN_RADIUS + 2;
+    assert(!checkTokenCollect(0, outsideDist + CFG.ARROW_WIDTH / 2, ax, ay, facing),
+        'Token beyond TOKEN_RADIUS from wing edge is NOT collected');
+
+    // Token just inside token radius from wing edge (near the wing)
+    // Place token slightly above the left wing midpoint
+    const tipX = CFG.ARROW_LENGTH * 0.6;
+    const blX = -CFG.ARROW_LENGTH * 0.4, blY = -CFG.ARROW_WIDTH / 2;
+    const midX = (tipX + blX) / 2, midY = blY / 2;
+    // Offset perpendicular to the wing by less than TOKEN_RADIUS
+    assert(checkTokenCollect(midX, midY - (CFG.TOKEN_RADIUS - 1), ax, ay, facing),
+        'Token just within TOKEN_RADIUS of wing edge IS collected');
+})();
+
+// ============================================================
+// TEST: Hazard collision (SLOW and SPEED)
+// ============================================================
+section('Hazard Collision (Slow/Speed)');
+
+(() => {
+    const ax = 0, ay = 0, facing = 0;
+
+    // Hazard at tip — should collide
+    assert(checkHazardCollision(CFG.ARROW_LENGTH * 0.6, 0, HAZARD.SLOW, ax, ay, facing),
+        'Slow hazard at arrow tip collides');
+
+    assert(checkHazardCollision(CFG.ARROW_LENGTH * 0.6, 0, HAZARD.SPEED, ax, ay, facing),
+        'Speed hazard at arrow tip collides');
+
+    // Hazard on back-right wing — should collide
+    assert(checkHazardCollision(-CFG.ARROW_LENGTH * 0.4, CFG.ARROW_WIDTH / 2, HAZARD.SLOW, ax, ay, facing),
+        'Slow hazard at back-right wing collides');
+
+    // Hazard far away — should NOT collide
+    assert(!checkHazardCollision(200, 200, HAZARD.SLOW, ax, ay, facing),
+        'Slow hazard far away does NOT collide');
+
+    // Hazard just outside HAZARD_RADIUS from the wing edge
+    assert(!checkHazardCollision(0, CFG.ARROW_WIDTH / 2 + CFG.HAZARD_RADIUS + 2, HAZARD.SLOW, ax, ay, facing),
+        'Slow hazard beyond HAZARD_RADIUS from wing does NOT collide');
+})();
+
+// ============================================================
+// TEST: Death hazard uses smaller radius (DEATH_HAZARD_RADIUS = 5)
+// ============================================================
+section('Death Hazard Radius (Half Size)');
+
+(() => {
+    const ax = 0, ay = 0, facing = 0;
+
+    assert(CFG.DEATH_HAZARD_RADIUS === CFG.HAZARD_RADIUS / 2,
+        'DEATH_HAZARD_RADIUS is half of HAZARD_RADIUS');
+
+    // Death hazard at tip — should collide
+    assert(checkHazardCollision(CFG.ARROW_LENGTH * 0.6, 0, HAZARD.DEATH, ax, ay, facing),
+        'Death hazard at arrow tip collides');
+
+    // Death hazard at a distance between DEATH_HAZARD_RADIUS and HAZARD_RADIUS from the wing edge
+    // This should NOT collide for DEATH but WOULD collide for SLOW
+    const testDist = (CFG.DEATH_HAZARD_RADIUS + CFG.HAZARD_RADIUS) / 2; // 7.5 — between 5 and 10
+    // Place it perpendicular to the right wing at the back corner
+    const testX = -CFG.ARROW_LENGTH * 0.4;
+    const testY = CFG.ARROW_WIDTH / 2 + testDist;
+
+    assert(!checkHazardCollision(testX, testY, HAZARD.DEATH, ax, ay, facing),
+        'Death hazard at distance 7.5 from wing does NOT collide (radius=5)');
+    assert(checkHazardCollision(testX, testY, HAZARD.SLOW, ax, ay, facing),
+        'Slow hazard at distance 7.5 from wing DOES collide (radius=10)');
+
+    // Death hazard just within DEATH_HAZARD_RADIUS
+    const closeTestY = CFG.ARROW_WIDTH / 2 + CFG.DEATH_HAZARD_RADIUS - 1;
+    assert(checkHazardCollision(testX, closeTestY, HAZARD.DEATH, ax, ay, facing),
+        'Death hazard just within DEATH_HAZARD_RADIUS collides');
+})();
+
+// ============================================================
+// TEST: Wall collision with arrow wing tips
+// ============================================================
+section('Wall Collision (Wing Tips)');
+
+(() => {
+    // Track segment at origin going right (angle=0), width=140
+    const segX = 0, segY = 0, segAngle = 0, segWidth = 140;
+    const hw = segWidth / 2; // 70
+
+    // Arrow centered on track — no collision
+    assert(!checkWallCollision(0, 0, 0, segX, segY, segAngle, segWidth),
+        'Arrow centered on track: no wall collision');
+
+    // Arrow centered but near left wall — wing tip should hit
+    // The back-left wing extends hw=5 perpendicular. At facing=0, back-left is at (arrowX-8.8, arrowY-5)
+    // Wall is at y = -70 (left) and y = 70 (right)
+    // Place arrow so back-left wing tip reaches past the wall
+    const arrowNearWall = -hw + CFG.ARROW_WIDTH / 2 - 1; // back-left tip at y = arrowY - 5, need it past -70
+    assert(checkWallCollision(0, arrowNearWall, 0, segX, segY, segAngle, segWidth),
+        'Arrow with left wing tip past wall: collision detected');
+
+    // Arrow safely inside track
+    assert(!checkWallCollision(0, 0, Math.PI / 4, segX, segY, segAngle, segWidth),
+        'Arrow safely inside track at 45 degrees: no collision');
+
+    // Arrow tip poking through wall (facing perpendicular to track)
+    // Facing = PI/2 (downward toward right wall), tip extends 13.2 in facing direction
+    // Tip at (arrowX, arrowY + 13.2), place arrow so tip crosses y=70
+    const arrowY_tipHit = hw - CFG.ARROW_LENGTH * 0.6 + 1; // tip at y = arrowY + 13.2, need > 70
+    assert(checkWallCollision(0, arrowY_tipHit, Math.PI / 2, segX, segY, segAngle, segWidth),
+        'Arrow tip poking through right wall: collision detected');
+
+    // Same position but check tip is just inside
+    const arrowY_tipSafe = hw - CFG.ARROW_LENGTH * 0.6 - 1;
+    assert(!checkWallCollision(0, arrowY_tipSafe, Math.PI / 2, segX, segY, segAngle, segWidth),
+        'Arrow tip just inside right wall: no collision');
+})();
+
+(() => {
+    // Narrow track — ensure wing width matters
+    const segX = 0, segY = 0, segAngle = 0, segWidth = CFG.MIN_TRACK_WIDTH; // 38
+    const hw = segWidth / 2; // 19
+
+    // Arrow centered on narrow track — should be safe
+    assert(!checkWallCollision(0, 0, 0, segX, segY, segAngle, segWidth),
+        'Arrow centered on narrow track: no collision');
+
+    // Arrow slightly offset on narrow track — wing tip may hit
+    const offset = hw - CFG.ARROW_WIDTH / 2 + 1; // wing tip at y = offset + 5 = hw + 1 = 20 > 19
+    assert(checkWallCollision(0, offset, 0, segX, segY, segAngle, segWidth),
+        'Arrow offset on narrow track: wing hits wall');
+})();
+
+// ============================================================
+// TEST: Wall collision with rotated arrow
+// ============================================================
+section('Wall Collision (Rotated Arrow)');
+
+(() => {
+    // Track going up (angle = -PI/2), width 100
+    const segX = 50, segY = 50, segAngle = -Math.PI / 2, segWidth = 100;
+
+    // Arrow centered, facing up — safe
+    assert(!checkWallCollision(50, 50, -Math.PI / 2, segX, segY, segAngle, segWidth),
+        'Arrow centered on upward track: no collision');
+
+    // Arrow with wing extending past right wall
+    // Track perpendicular is along x-axis for angle=-PI/2
+    // Walls at x = 0 and x = 100
+    // Place arrow near right wall
+    assert(checkWallCollision(97, 50, -Math.PI / 2, segX, segY, segAngle, segWidth),
+        'Arrow near right wall of upward track: wing collision');
+})();
+
+// ============================================================
+// TEST: Collision symmetry
+// ============================================================
+section('Collision Symmetry');
+
+(() => {
+    const ax = 50, ay = 50;
+
+    // Token equidistant from both wings should be collected from either side
+    const d_left  = distToArrowWings(50, 50 - 15, ax, ay, 0);
+    const d_right = distToArrowWings(50, 50 + 15, ax, ay, 0);
+    assertApprox(d_left, d_right, 0.001, 'Symmetric points above/below have equal distance to wings');
+
+    // Rotating 180 degrees should mirror the collision shape
+    const d_front_0   = distToArrowWings(ax + 20, ay, ax, ay, 0);
+    const d_front_180 = distToArrowWings(ax - 20, ay, ax, ay, Math.PI);
+    assertApprox(d_front_0, d_front_180, 0.001, 'Rotating 180 degrees mirrors collision correctly');
+})();
+
+// ============================================================
+// TEST: Edge cases
+// ============================================================
+section('Edge Cases');
+
+(() => {
+    // Point exactly at arrow center
+    const dCenter = distToArrowWings(0, 0, 0, 0, 0);
+    assert(dCenter >= 0, 'Distance from center is non-negative');
+    assert(dCenter < CFG.TOKEN_RADIUS, 'Arrow center is within token collect range');
+
+    // Very small angles — no floating point issues
+    const d1 = distToArrowWings(5, 0, 0, 0, 0.0001);
+    const d2 = distToArrowWings(5, 0, 0, 0, 0);
+    assert(Math.abs(d1 - d2) < 0.1, 'Very small angle difference gives similar distance');
+
+    // Negative facing angles work correctly
+    const dNeg = distToArrowWings(0, -10, 0, 0, -Math.PI / 2);
+    const dPos = distToArrowWings(0, 10, 0, 0, Math.PI / 2);
+    assertApprox(dNeg, dPos, 0.001, 'Negative and positive facing give symmetric results');
+})();
+
+// ============================================================
+// Summary
+// ============================================================
+const summary = document.createElement('div');
+summary.className = 'summary ' + (passedTests === totalTests ? 'all-pass' : 'has-fail');
+summary.textContent = `${passedTests}/${totalTests} tests passed` +
+    (passedTests === totalTests ? ' — ALL PASS' : ` — ${totalTests - passedTests} FAILED`);
+resultsEl.appendChild(summary);
+
+// Also log to console for headless testing
+console.log(`\n=== Collision Tests: ${passedTests}/${totalTests} passed ===`);
+if (passedTests < totalTests) {
+    console.error(`${totalTests - passedTests} tests FAILED`);
+}
+</script>
+</body>
+</html>

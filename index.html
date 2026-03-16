@@ -662,6 +662,7 @@
 
     // These are in CFG so dev.html can tune them
     if (!CFG.HAZARD_RADIUS) CFG.HAZARD_RADIUS = 10;
+    if (!CFG.DEATH_HAZARD_RADIUS) CFG.DEATH_HAZARD_RADIUS = 5;
     if (!CFG.HAZARD_EFFECT_DUR) CFG.HAZARD_EFFECT_DUR = 180; // 3 seconds at 60fps
     if (!CFG.TOKEN_MIN_GAP) CFG.TOKEN_MIN_GAP = 25;
     if (!CFG.TOKEN_SPAWN_CHANCE) CFG.TOKEN_SPAWN_CHANCE = 0.025;
@@ -821,7 +822,8 @@
                 if (h.hit) continue;
                 // Check distance from hazard center to arrow's two wing edges
                 const d = distToArrowWings(h.x, h.y, arrowX, arrowY, arrowFacing);
-                if (d < CFG.HAZARD_RADIUS) {
+                const radius = h.type === HAZARD.DEATH ? CFG.DEATH_HAZARD_RADIUS : CFG.HAZARD_RADIUS;
+                if (d < radius) {
                     h.hit = true;
                     if (h.type === HAZARD.DEATH) return 'death';
                     if (h.type === HAZARD.SLOW) {
@@ -907,8 +909,9 @@
                 }
 
                 const isDeath = h.type === HAZARD.DEATH;
+                const baseRadius = isDeath ? CFG.DEATH_HAZARD_RADIUS : CFG.HAZARD_RADIUS;
                 const pulse = isDeath ? 1 : 0.85 + 0.15 * Math.sin(now * 5 + h.segIdx);
-                const r = CFG.HAZARD_RADIUS * pulse;
+                const r = baseRadius * pulse;
 
                 // Outer glow (skip for death — keep it solid and clean)
                 if (glowColor) {
@@ -1653,21 +1656,38 @@
             // Wall normal: perpendicular to track direction
             const nx = Math.cos(seg.angle + Math.PI / 2);
             const ny = Math.sin(seg.angle + Math.PI / 2);
-            const dx = arrow.x - seg.x;
-            const dy = arrow.y - seg.y;
-            const cross = dx * nx + dy * ny;
             const hw = seg.width / 2;
 
-            // Touching wall = instant death
-            if (Math.abs(cross) > hw - CFG.ARROW_WIDTH * 0.3) {
-                const side = cross > 0 ? 1 : -1;
-                const hitX = seg.x + nx * hw * side;
-                const hitY = seg.y + ny * hw * side;
-                this.particles.emit(hitX, hitY, 15, '#ff3366', 1.5, 3, 25);
-                this.particles.emit(hitX, hitY, 8, '#ffffff', 1, 2, 15);
-                this.audio.wallHit();
-                this.diedFromWall = true;
-                this.die();
+            // Check the three arrow corner points (matching visual wing edges)
+            const cos = Math.cos(arrow.facing), sin = Math.sin(arrow.facing);
+            const wnx = -sin, wny = cos; // perpendicular to arrow facing
+            const len = CFG.ARROW_LENGTH;
+            const ahw = CFG.ARROW_WIDTH / 2;
+
+            const points = [
+                // tip
+                [arrow.x + cos * len * 0.6, arrow.y + sin * len * 0.6],
+                // back-left wing
+                [arrow.x - cos * len * 0.4 - wnx * ahw, arrow.y - sin * len * 0.4 - wny * ahw],
+                // back-right wing
+                [arrow.x - cos * len * 0.4 + wnx * ahw, arrow.y - sin * len * 0.4 + wny * ahw]
+            ];
+
+            for (const pt of points) {
+                const dx = pt[0] - seg.x;
+                const dy = pt[1] - seg.y;
+                const cross = dx * nx + dy * ny;
+                if (Math.abs(cross) > hw) {
+                    const side = cross > 0 ? 1 : -1;
+                    const hitX = seg.x + nx * hw * side;
+                    const hitY = seg.y + ny * hw * side;
+                    this.particles.emit(hitX, hitY, 15, '#ff3366', 1.5, 3, 25);
+                    this.particles.emit(hitX, hitY, 8, '#ffffff', 1, 2, 15);
+                    this.audio.wallHit();
+                    this.diedFromWall = true;
+                    this.die();
+                    return;
+                }
             }
         }
 
