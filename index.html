@@ -479,12 +479,11 @@
 
         update(inputDir, dt60, braking) {
             // inputDir: -1 = left, 0 = none, +1 = right
-            // INVERTED: tap right -> arrow nose turns LEFT (counter-clockwise)
-            //           so the body drifts RIGHT (like counter-steering)
+            // Direct controls: tap left = turn left, tap right = turn right
 
             if (inputDir !== 0 && !braking) {
-                // Steer the facing angle (inverted direction)
-                this.steerVel += (-inputDir) * CFG.STEER_RATE * dt60;
+                // Steer the facing angle
+                this.steerVel += inputDir * CFG.STEER_RATE * dt60;
                 this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
             } else {
                 // Dampen steering velocity when not pressing
@@ -1236,7 +1235,7 @@
             ctx.globalAlpha = 1;
         }
 
-        drawArrow(arrow, camX, camY) {
+        drawArrow(arrow, camX, camY, speedMult) {
             const ctx = this.ctx;
             const sx = arrow.x - camX;
             const sy = arrow.y - camY;
@@ -1260,8 +1259,32 @@
             ctx.translate(sx, sy);
             ctx.rotate(a);
 
+            // Speed-based color: green when fast, yellow normal, red when slow
+            let arrowColor, glowColor;
+            const sm = speedMult !== undefined ? speedMult : 1;
+            if (sm > 1.15) {
+                // Boosted — cyan/green
+                const t = clamp((sm - 1.15) / 0.35, 0, 1);
+                const r = Math.round(lerp(255, 0, t));
+                const g = Math.round(lerp(238, 255, t));
+                const b = Math.round(lerp(0, 160, t));
+                arrowColor = `rgb(${r},${g},${b})`;
+                glowColor = '#00ffa0';
+            } else if (sm < 0.85) {
+                // Slowed — orange to red
+                const t = clamp((0.85 - sm) / 0.35, 0, 1);
+                const r = 255;
+                const g = Math.round(lerp(140, 50, t));
+                const b = Math.round(lerp(0, 50, t));
+                arrowColor = `rgb(${r},${g},${b})`;
+                glowColor = '#ff3366';
+            } else {
+                arrowColor = '#ffee00';
+                glowColor = '#ffff00';
+            }
+
             // Glow
-            ctx.shadowColor = '#ffff00';
+            ctx.shadowColor = glowColor;
             ctx.shadowBlur = arrow.wallHitTimer > 0 ? 25 : 15;
 
             // Arrow shape
@@ -1272,12 +1295,12 @@
             ctx.lineTo(-len * 0.4, hw);         // back right
             ctx.closePath();
 
-            // Fill with gradient
+            // Fill with speed-based color (wall flash overrides)
             const wallFlash = arrow.wallHitTimer > 0 ? 0.5 + Math.sin(arrow.wallHitTimer * 0.5) * 0.5 : 0;
             if (wallFlash > 0.3) {
                 ctx.fillStyle = '#ff3366';
             } else {
-                ctx.fillStyle = '#ffee00';
+                ctx.fillStyle = arrowColor;
             }
             ctx.fill();
 
@@ -1480,7 +1503,7 @@
             this.tokens = new TimeTokenManager();
             this.hazards = new HazardManager();
             this.state = STATE.MENU;
-            this.highScore = parseInt(localStorage.getItem('driftArrowHigh') || '0', 10);
+            this.highScore = parseInt(localStorage.getItem('driftArrowHigh2') || '0', 10);
             this.distance = 0;
             this.timeLeft = 0;
             this.isNewHigh = false;
@@ -1490,6 +1513,8 @@
             this.camX = 0;
             this.camY = 0;
             this.timeFlash = 0;
+            this.prevSpeedMult = 1;
+            this.speedParticleTimer = 0;
 
             this.renderer.resize();
             window.addEventListener('resize', () => this.renderer.resize());
@@ -1560,7 +1585,7 @@
             if (score > this.highScore) {
                 this.highScore = score;
                 this.isNewHigh = true;
-                localStorage.setItem('driftArrowHigh', String(this.highScore));
+                localStorage.setItem('driftArrowHigh2', String(this.highScore));
             }
         }
 
@@ -1740,6 +1765,20 @@
                 this.arrow.speedMult = lerp(this.arrow.speedMult, target, 0.05 * dt60);
             }
 
+            // Speed-change particles: continuous trail when boosted or slowed
+            this.speedParticleTimer -= dt60;
+            const sm = this.arrow.speedMult;
+            if (sm > 1.15 && this.speedParticleTimer <= 0) {
+                // Boost: green/cyan sparks trailing behind
+                this.particles.emit(this.arrow.x, this.arrow.y, 3, '#00ffa0', 0.8, 2, 15);
+                this.speedParticleTimer = 4;
+            } else if (sm < 0.7 && this.speedParticleTimer <= 0) {
+                // Heavy slow: red/orange sparks
+                this.particles.emit(this.arrow.x, this.arrow.y, 2, '#ff4444', 0.8, 2, 12);
+                this.speedParticleTimer = 6;
+            }
+            this.prevSpeedMult = sm;
+
             // Particles
             this.particles.update(dt60);
 
@@ -1813,7 +1852,7 @@
 
             // Draw arrow
             if (this.state === STATE.PLAYING || this.state === STATE.COUNTDOWN) {
-                this.renderer.drawArrow(this.arrow, this.camX, this.camY);
+                this.renderer.drawArrow(this.arrow, this.camX, this.camY, this.arrow.speedMult);
             }
 
             // HUD
