@@ -548,15 +548,28 @@
                 const backY = this.y - Math.sin(this.facing) * CFG.ARROW_LENGTH * 0.4;
                 const nx = Math.cos(this.facing + Math.PI / 2);
                 const ny = Math.sin(this.facing + Math.PI / 2);
+                const slideDir = angleDiff(this.facing, this.moveAngle);
+                // Smooth blend: track a running blend value (0=cyan, 1=magenta)
+                const targetBlend = slideDir > 0 ? 1 : 0;
+                if (this._driftColorBlend === undefined) this._driftColorBlend = targetBlend;
+                this._driftColorBlend += (targetBlend - this._driftColorBlend) * 0.08 * dt60;
+                const b = this._driftColorBlend;
+                // Lerp between cyan (#00ffff) and magenta (#ff00ff)
+                const cr = Math.round(255 * b);
+                const cg = Math.round(255 * (1 - b));
+                const cb = 255;
+                const trailColor = 'rgb(' + cr + ',' + cg + ',' + cb + ')';
                 this.driftTrail.push({
                     x: backX + nx * CFG.ARROW_WIDTH * 0.4,
                     y: backY + ny * CFG.ARROW_WIDTH * 0.4,
-                    age: 0
+                    age: 0,
+                    color: trailColor
                 });
                 this.driftTrail.push({
                     x: backX - nx * CFG.ARROW_WIDTH * 0.4,
                     y: backY - ny * CFG.ARROW_WIDTH * 0.4,
-                    age: 0
+                    age: 0,
+                    color: trailColor
                 });
             }
 
@@ -1275,9 +1288,7 @@
             for (const t of arrow.driftTrail) {
                 const alpha = clamp(1 - t.age / 40, 0, 1) * 0.5;
                 ctx.globalAlpha = alpha;
-                const slideDir = angleDiff(arrow.facing, arrow.moveAngle);
-                const trailColor = slideDir > 0 ? '#ff00ff' : '#00ffff';
-                ctx.fillStyle = trailColor;
+                ctx.fillStyle = t.color;
                 ctx.fillRect(t.x - camX - 1.5, t.y - camY - 1.5, 3, 3);
             }
             ctx.globalAlpha = 1;
