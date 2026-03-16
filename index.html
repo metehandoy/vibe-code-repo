@@ -42,8 +42,8 @@
         DRIFT_DRAG_SCALE: 0.008,
         ARROW_LENGTH: 22,
         ARROW_WIDTH: 10,
-        TRACK_WIDTH: 120,
-        MIN_TRACK_WIDTH: 45,
+        TRACK_WIDTH: 140,
+        MIN_TRACK_WIDTH: 38,
         BRAKE_DECEL: 0.02,
         BRAKE_MIN_SPEED: 0.05,
         SEGMENT_LENGTH: 12,
@@ -358,20 +358,23 @@
             this.lastX = candX;
             this.lastY = candY;
 
-            // Dynamic width — gentler narrowing for more playable roads
+            // Dynamic width — multiple overlapping waves for organic feel
             const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty * 0.5);
-            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 20;
-            const widthPulse2 = Math.sin(this.segmentIndex * 0.012) * 10;
-            const widthJitter = (Math.random() - 0.5) * 6;
+            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 25;
+            const widthPulse2 = Math.sin(this.segmentIndex * 0.012) * 15;
+            const widthPulse3 = Math.sin(this.segmentIndex * 0.007 + 2.0) * 12;  // slow wide breathing
+            const widthJitter = (Math.random() - 0.5) * 8;
+            // Occasional dramatic pinch every ~200 segments
+            const pinch = Math.pow(Math.sin(this.segmentIndex * 0.016), 8) * -30;
             let patternNarrow = 0;
             if (this.pattern === PATTERN.HAIRPIN || this.pattern === PATTERN.SPIRAL) {
-                patternNarrow = -15 * (0.3 + this.difficulty);
+                patternNarrow = -20 * (0.3 + this.difficulty);
             } else if (this.pattern === PATTERN.CHICANE || this.pattern === PATTERN.SLALOM) {
-                patternNarrow = -10 * (0.3 + this.difficulty);
+                patternNarrow = -12 * (0.3 + this.difficulty);
             } else if (this.pattern === PATTERN.STRAIGHT) {
-                patternNarrow = 8;
+                patternNarrow = 15;
             }
-            const trackW = clamp(baseW + widthPulse + widthPulse2 + widthJitter + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
+            const trackW = clamp(baseW + widthPulse + widthPulse2 + widthPulse3 + widthJitter + pinch + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
 
             let smoothW = trackW;
             if (this.spine.length > 0) {
@@ -633,7 +636,7 @@
     if (!CFG.HAZARD_SPAWN_CHANCE) CFG.HAZARD_SPAWN_CHANCE = 0.02;
     if (!CFG.HAZARD_NO_SPAWN_ZONE) CFG.HAZARD_NO_SPAWN_ZONE = 80;
     if (!CFG.HAZARD_SLOW_MULT) CFG.HAZARD_SLOW_MULT = 0.55;
-    if (!CFG.HAZARD_SPEED_MULT) CFG.HAZARD_SPEED_MULT = 1.12;
+    if (!CFG.HAZARD_SPEED_MULT) CFG.HAZARD_SPEED_MULT = 1.35;
     if (!CFG.ANGLE_SMOOTH) CFG.ANGLE_SMOOTH = 0.4;
     if (!CFG.OVERLAP_MARGIN) CFG.OVERLAP_MARGIN = 15;
     if (!CFG.SAFE_DIST_MULT) CFG.SAFE_DIST_MULT = 3.5;
@@ -1171,15 +1174,45 @@
             ctx.fillStyle = '#120024';
             ctx.fill();
 
-            // Center line (subtle)
-            ctx.beginPath();
-            ctx.moveTo(spine[0].x - camX, spine[0].y - camY);
-            for (let i = 1; i < spine.length; i++) {
-                ctx.lineTo(spine[i].x - camX, spine[i].y - camY);
+            // Center dashes (give sense of speed on straights)
+            ctx.strokeStyle = 'rgba(100, 50, 180, 0.25)';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < spine.length; i += 4) {
+                const j = Math.min(i + 2, spine.length - 1);
+                if (j <= i) continue;
+                ctx.beginPath();
+                ctx.moveTo(spine[i].x - camX, spine[i].y - camY);
+                ctx.lineTo(spine[j].x - camX, spine[j].y - camY);
+                ctx.stroke();
             }
-            ctx.strokeStyle = 'rgba(100, 50, 180, 0.15)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+
+            // Road edge markers — periodic ticks perpendicular to the track
+            for (let i = 0; i < spine.length; i += 8) {
+                const seg = spine[i];
+                const w = seg.width;
+                const nx = Math.cos(seg.angle + Math.PI / 2);
+                const ny = Math.sin(seg.angle + Math.PI / 2);
+                const tickLen = 6;
+
+                ctx.strokeStyle = 'rgba(255, 0, 255, 0.3)';
+                ctx.lineWidth = 1.5;
+                // Left tick
+                const lx = seg.x + nx * (w / 2) - camX;
+                const ly = seg.y + ny * (w / 2) - camY;
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
+                ctx.lineTo(lx - nx * tickLen, ly - ny * tickLen);
+                ctx.stroke();
+
+                // Right tick
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+                const rx = seg.x - nx * (w / 2) - camX;
+                const ry = seg.y - ny * (w / 2) - camY;
+                ctx.beginPath();
+                ctx.moveTo(rx, ry);
+                ctx.lineTo(rx + nx * tickLen, ry + ny * tickLen);
+                ctx.stroke();
+            }
 
             // Neon walls
             this._drawNeonLine(leftWall, '#ff00ff', 3);
@@ -1235,7 +1268,7 @@
             ctx.globalAlpha = 1;
         }
 
-        drawArrow(arrow, camX, camY, speedMult) {
+        drawArrow(arrow, camX, camY, speedMult, hazardEffect) {
             const ctx = this.ctx;
             const sx = arrow.x - camX;
             const sy = arrow.y - camY;
@@ -1259,28 +1292,17 @@
             ctx.translate(sx, sy);
             ctx.rotate(a);
 
-            // Speed-based color: green when fast, yellow normal, red when slow
+            // Token-driven color: white default, orange on boost, blue on slow
             let arrowColor, glowColor;
-            const sm = speedMult !== undefined ? speedMult : 1;
-            if (sm > 1.15) {
-                // Boosted — cyan/green
-                const t = clamp((sm - 1.15) / 0.35, 0, 1);
-                const r = Math.round(lerp(255, 0, t));
-                const g = Math.round(lerp(238, 255, t));
-                const b = Math.round(lerp(0, 160, t));
-                arrowColor = `rgb(${r},${g},${b})`;
-                glowColor = '#00ffa0';
-            } else if (sm < 0.85) {
-                // Slowed — orange to red
-                const t = clamp((0.85 - sm) / 0.35, 0, 1);
-                const r = 255;
-                const g = Math.round(lerp(140, 50, t));
-                const b = Math.round(lerp(0, 50, t));
-                arrowColor = `rgb(${r},${g},${b})`;
-                glowColor = '#ff3366';
+            if (hazardEffect && hazardEffect.type === 'speed') {
+                arrowColor = '#ff8800';
+                glowColor = '#ffaa00';
+            } else if (hazardEffect && hazardEffect.type === 'slow') {
+                arrowColor = '#4488ff';
+                glowColor = '#4488ff';
             } else {
-                arrowColor = '#ffee00';
-                glowColor = '#ffff00';
+                arrowColor = '#ffffff';
+                glowColor = '#ffffff';
             }
 
             // Glow
@@ -1752,9 +1774,11 @@
                 this.die();
                 return;
             } else if (hazardHit === 'slow') {
-                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#4488ff', 1, 2, 15);
+                this.particles.emit(this.arrow.x, this.arrow.y, 20, '#4488ff', 1.5, 4, 30);
+                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#88bbff', 1, 2, 20);
             } else if (hazardHit === 'speed') {
-                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#ffaa00', 1, 2, 15);
+                this.particles.emit(this.arrow.x, this.arrow.y, 20, '#ff8800', 1.5, 4, 30);
+                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#ffcc44', 1, 2, 20);
             }
             this.hazards.update(dt60);
 
@@ -1765,19 +1789,20 @@
                 this.arrow.speedMult = lerp(this.arrow.speedMult, target, 0.05 * dt60);
             }
 
-            // Speed-change particles: continuous trail when boosted or slowed
+            // Token effect particles: continuous trail matching arrow color
             this.speedParticleTimer -= dt60;
-            const sm = this.arrow.speedMult;
-            if (sm > 1.15 && this.speedParticleTimer <= 0) {
-                // Boost: green/cyan sparks trailing behind
-                this.particles.emit(this.arrow.x, this.arrow.y, 3, '#00ffa0', 0.8, 2, 15);
-                this.speedParticleTimer = 4;
-            } else if (sm < 0.7 && this.speedParticleTimer <= 0) {
-                // Heavy slow: red/orange sparks
-                this.particles.emit(this.arrow.x, this.arrow.y, 2, '#ff4444', 0.8, 2, 12);
-                this.speedParticleTimer = 6;
+            const activeEffect = this.hazards.getActiveEffect();
+            if (activeEffect && this.speedParticleTimer <= 0) {
+                if (activeEffect.type === 'speed') {
+                    // Boost: orange sparks trailing behind
+                    this.particles.emit(this.arrow.x, this.arrow.y, 3, '#ff8800', 0.8, 2, 15);
+                    this.speedParticleTimer = 3;
+                } else if (activeEffect.type === 'slow') {
+                    // Slow: blue sparks
+                    this.particles.emit(this.arrow.x, this.arrow.y, 2, '#4488ff', 0.8, 2, 12);
+                    this.speedParticleTimer = 5;
+                }
             }
-            this.prevSpeedMult = sm;
 
             // Particles
             this.particles.update(dt60);
@@ -1852,7 +1877,7 @@
 
             // Draw arrow
             if (this.state === STATE.PLAYING || this.state === STATE.COUNTDOWN) {
-                this.renderer.drawArrow(this.arrow, this.camX, this.camY, this.arrow.speedMult);
+                this.renderer.drawArrow(this.arrow, this.camX, this.camY, this.arrow.speedMult, this.hazards.getActiveEffect());
             }
 
             // HUD
