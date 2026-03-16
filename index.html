@@ -814,7 +814,11 @@
             const tailY = arrowY - Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
             for (const h of this.hazards) {
                 if (h.hit) continue;
-                const d = distPointToSeg(h.x, h.y, tailX, tailY, tipX, tipY);
+                // Death: tip-only collision for pixel-perfect feel
+                // Speed/Slow: full spine collision (forgiving pickups)
+                const d = h.type === HAZARD.DEATH
+                    ? dist(h.x, h.y, tipX, tipY)
+                    : distPointToSeg(h.x, h.y, tailX, tailY, tipX, tipY);
                 if (d < CFG.HAZARD_RADIUS) {
                     h.hit = true;
                     if (h.type === HAZARD.DEATH) return 'death';
