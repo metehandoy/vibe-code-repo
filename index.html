@@ -65,6 +65,14 @@
     function lerp(a, b, t) { return a + (b - a) * t; }
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
     function dist(x1, y1, x2, y2) { return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2); }
+    // Closest distance from point (px,py) to line segment (ax,ay)-(bx,by)
+    function distPointToSeg(px, py, ax, ay, bx, by) {
+        const dx = bx - ax, dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return dist(px, py, ax, ay);
+        const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
+        return dist(px, py, ax + t * dx, ay + t * dy);
+    }
 
     // ============================================================
     // PROCEDURAL TRACK
@@ -691,12 +699,16 @@
             this.tokens = this.tokens.filter(t => t.segIdx >= minSegIdx);
         }
 
-        checkCollect(arrowX, arrowY) {
+        checkCollect(arrowX, arrowY, arrowFacing) {
             let timeGained = 0;
+            const tipX = arrowX + Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
+            const tipY = arrowY + Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
+            const tailX = arrowX - Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
+            const tailY = arrowY - Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
             for (const t of this.tokens) {
                 if (t.collected) continue;
-                const d = dist(arrowX, arrowY, t.x, t.y);
-                if (d < CFG.TOKEN_RADIUS + CFG.ARROW_LENGTH * 0.5) {
+                const d = distPointToSeg(t.x, t.y, tailX, tailY, tipX, tipY);
+                if (d < CFG.TOKEN_RADIUS) {
                     t.collected = true;
                     timeGained += CFG.TIME_TOKEN_VALUE;
                     this.collectFlash = 20;
@@ -795,11 +807,15 @@
         }
 
         // Returns: null, 'slow', 'speed', or 'death'
-        checkCollision(arrowX, arrowY) {
+        checkCollision(arrowX, arrowY, arrowFacing) {
+            const tipX = arrowX + Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
+            const tipY = arrowY + Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.6;
+            const tailX = arrowX - Math.cos(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
+            const tailY = arrowY - Math.sin(arrowFacing) * CFG.ARROW_LENGTH * 0.4;
             for (const h of this.hazards) {
                 if (h.hit) continue;
-                const d = dist(arrowX, arrowY, h.x, h.y);
-                if (d < CFG.HAZARD_RADIUS + CFG.ARROW_LENGTH * 0.5) {
+                const d = distPointToSeg(h.x, h.y, tailX, tailY, tipX, tipY);
+                if (d < CFG.HAZARD_RADIUS) {
                     h.hit = true;
                     if (h.type === HAZARD.DEATH) return 'death';
                     if (h.type === HAZARD.SLOW) {
@@ -886,7 +902,7 @@
 
                 const isDeath = h.type === HAZARD.DEATH;
                 const pulse = isDeath ? 1 : 0.85 + 0.15 * Math.sin(now * 5 + h.segIdx);
-                const r = isDeath ? CFG.HAZARD_RADIUS * 0.7 : CFG.HAZARD_RADIUS * pulse;
+                const r = CFG.HAZARD_RADIUS * pulse;
 
                 // Outer glow (skip for death — keep it solid and clean)
                 if (glowColor) {
@@ -1766,7 +1782,7 @@
             }
 
             // Time tokens: collect (spawning handled by track callback)
-            const gained = this.tokens.checkCollect(this.arrow.x, this.arrow.y);
+            const gained = this.tokens.checkCollect(this.arrow.x, this.arrow.y, this.arrow.facing);
             if (gained > 0) {
                 this.timeLeft += gained;
                 this.timeFlash = 30;
@@ -1776,7 +1792,7 @@
             this.tokens.update(dt60);
 
             // Road hazards: check collision
-            const hazardHit = this.hazards.checkCollision(this.arrow.x, this.arrow.y);
+            const hazardHit = this.hazards.checkCollision(this.arrow.x, this.arrow.y, this.arrow.facing);
             if (hazardHit === 'death') {
                 this.particles.emit(this.arrow.x, this.arrow.y, 25, '#ff2244', 1.5, 4, 35);
                 this.audio.wallHit();
