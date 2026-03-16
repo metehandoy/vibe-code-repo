@@ -865,46 +865,41 @@
                     symbol = '>';
                 } else {
                     color = '#ff2244';
-                    glowColor = 'rgba(255, 34, 68, 0.2)';
-                    strokeColor = '#ffffff';
+                    glowColor = null;
+                    strokeColor = '#ff2244';
                     symbolColor = '#ffffff';
                     symbol = 'X';
                 }
 
                 const pulse = 0.85 + 0.15 * Math.sin(now * 5 + h.segIdx);
-                const r = CFG.HAZARD_RADIUS * pulse;
+                const isDeath = h.type === HAZARD.DEATH;
+                const r = isDeath ? CFG.HAZARD_RADIUS * 0.7 * pulse : CFG.HAZARD_RADIUS * pulse;
 
-                // Outer glow
-                ctx.beginPath();
-                ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
-                ctx.fillStyle = glowColor;
-                ctx.fill();
+                // Outer glow (skip for death — keep it solid and clean)
+                if (glowColor) {
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
+                    ctx.fillStyle = glowColor;
+                    ctx.fill();
+                }
 
                 // Core fill
                 ctx.beginPath();
                 ctx.arc(sx, sy, r, 0, Math.PI * 2);
                 ctx.fillStyle = color;
-                ctx.shadowColor = color;
-                ctx.shadowBlur = 15;
+                if (!isDeath) {
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = 15;
+                }
                 ctx.fill();
                 ctx.shadowBlur = 0;
 
-                // Clear outline ring
+                // Outline ring
                 ctx.beginPath();
                 ctx.arc(sx, sy, r + 1, 0, Math.PI * 2);
                 ctx.strokeStyle = strokeColor;
-                ctx.lineWidth = 2;
+                ctx.lineWidth = isDeath ? 2.5 : 2;
                 ctx.stroke();
-
-                // Death gets extra warning ring
-                if (h.type === HAZARD.DEATH) {
-                    const dangerPulse = 0.5 + 0.5 * Math.sin(now * 8 + h.segIdx);
-                    ctx.beginPath();
-                    ctx.arc(sx, sy, r + 5, 0, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(255,255,255,' + (0.3 + dangerPulse * 0.5) + ')';
-                    ctx.lineWidth = 1.5;
-                    ctx.stroke();
-                }
 
                 // Symbol (white for contrast)
                 ctx.fillStyle = symbolColor;
