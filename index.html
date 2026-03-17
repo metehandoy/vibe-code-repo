@@ -163,10 +163,10 @@
             this.agentFacing = -Math.PI / 2;
             this.agentMoveAngle = -Math.PI / 2;
             this.agentSteerVel = 0;
-            // Agent behavioral state reset
-            this.agentWanderPhase = 0;
-            this.agentRhythmPhase = 0;
-            this.agentEventTimer = CFG.EVENT_INTERVAL_MIN + 10;
+            // Agent behavioral state reset — randomise phases so each run differs
+            this.agentWanderPhase = Math.random() * 1000;
+            this.agentRhythmPhase = Math.random() * Math.PI * 2;
+            this.agentEventTimer = CFG.EVENT_INTERVAL_MIN + Math.floor(Math.random() * 20);
             this.agentEventCurvature = 0;
             this.agentEventDir = 1;
             // Center tracking
@@ -359,7 +359,9 @@
             const baseWidth = lerp(maxWidth, minWidth, curvatureFraction * CFG.WIDTH_CURVATURE_COUPLING * couplingRamp);
             const difficultyNarrow = this.difficulty * 0.4 * (maxWidth - minWidth);
             const breathingPulse = Math.sin(this.segmentIndex * 0.015) * 12;
-            const targetWidth = clamp(baseWidth - difficultyNarrow + breathingPulse, minWidth, maxWidth);
+            // Effective minimum ramps from 2× minWidth down to minWidth over first 500 segments
+            const effectiveMin = lerp(minWidth * 2, minWidth, clamp(this.segmentIndex / 500, 0, 1));
+            const targetWidth = clamp(baseWidth - difficultyNarrow + breathingPulse, effectiveMin, maxWidth);
             let smoothW = targetWidth;
             if (this.spine.length > 0) {
                 smoothW = lerp(this.spine[this.spine.length - 1].width, targetWidth, CFG.WIDTH_TRANSITION_RATE);
