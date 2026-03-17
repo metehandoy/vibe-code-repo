@@ -500,13 +500,34 @@
             this.driftAmount = 0;          // how much we're sliding (for visuals)
             this.driftTrail = [];
             this.brakeTrail = [];
+            this._lastInputDir = 0;        // previous frame's input direction
+            this._driftBrakeActive = false; // drift+brake mode (mobile: brake right after drift)
         }
 
         update(inputDir, dt60, braking) {
             // inputDir: -1 = left, 0 = none, +1 = right
             // Direct controls: tap left = turn left, tap right = turn right
 
-            const driftBraking = inputDir !== 0 && braking;
+            // Drift+brake detection:
+            // Keyboard: holding direction + brake simultaneously
+            // Mobile/touch: braking immediately after drifting (no gap between inputs)
+            if (inputDir !== 0 && !braking) {
+                // Currently steering — remember direction, ready for drift+brake
+                this._lastInputDir = inputDir;
+                this._driftBrakeActive = false;
+            } else if (braking && inputDir !== 0) {
+                // Keyboard: direction + brake at the same time
+                this._driftBrakeActive = true;
+            } else if (braking && inputDir === 0 && this._lastInputDir !== 0 && this.drifting) {
+                // Mobile: was drifting, now braking — activate drift+brake
+                this._driftBrakeActive = true;
+            } else if (!braking && inputDir === 0) {
+                // Nothing held — clear state
+                this._driftBrakeActive = false;
+                this._lastInputDir = 0;
+            }
+
+            const driftBraking = this._driftBrakeActive;
 
             if (inputDir !== 0) {
                 // Steer the facing angle (allowed during drift+brake too)
@@ -522,8 +543,8 @@
             this.facing += this.steerVel * dt60;
 
             // When not pressing direction, gradually realign facing to movement direction
-            // (This happens even while braking alone — only drift+brake locks the angle)
-            if (inputDir === 0) {
+            // During drift+brake, skip realign to lock the drift angle
+            if (inputDir === 0 && !driftBraking) {
                 const diff = angleDiff(this.facing, this.moveAngle);
                 this.facing += diff * CFG.REALIGN_RATE * dt60;
             }
