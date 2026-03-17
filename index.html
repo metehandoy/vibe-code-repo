@@ -198,14 +198,19 @@
             }
         }
 
-        // Returns the minimum distance from (cx,cy) to any non-recent spine segment
+        // Returns the minimum distance from (cx,cy) to non-recent spine segments
+        // Only checks within the alive window — segments beyond that would have
+        // been trimmed in gameplay, so the track can revisit those areas freely.
         _minDistToOldTrack(cx, cy) {
             const recentThreshold = 60;
             const len = this.spine.length;
             if (len < recentThreshold) return Infinity;
+            const aliveWindow = CFG.LOOK_AHEAD + CFG.LOOK_BEHIND;
+            const checkStart = Math.max(0, len - aliveWindow);
             const checkEnd = len - recentThreshold;
+            if (checkEnd <= checkStart) return Infinity;
             let minD2 = Infinity;
-            for (let i = 0; i < checkEnd; i++) {
+            for (let i = checkStart; i < checkEnd; i++) {
                 const s = this.spine[i];
                 const dx = cx - s.x;
                 const dy = cy - s.y;

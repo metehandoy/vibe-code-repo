@@ -342,6 +342,7 @@ const DEFAULTS = {
     OVERLAP_MARGIN: 15,
     SAFE_DIST_MULT: 3.5,
     DIFFICULTY_RAMP: 0.00012,
+    ALIVE_WINDOW: 220,
 };
 
 const PARAM_SECTIONS = [
@@ -354,6 +355,7 @@ const PARAM_SECTIONS = [
     { title: 'Overlap Avoidance', params: [
         ['OVERLAP_MARGIN',  'Margin',       0,  60,  1],
         ['SAFE_DIST_MULT',  'Safe Dist x',  1.0, 8.0, 0.25],
+        ['ALIVE_WINDOW',    'Alive Window', 50, 600, 10],
     ]},
     { title: 'Difficulty', params: [
         ['DIFFICULTY_RAMP',  'Ramp Speed', 0.00002, 0.001, 0.00002],
@@ -474,9 +476,12 @@ function generateTrack(cfg, count, rng) {
         const recentThreshold = 60;
         const len = spine.length;
         if (len < recentThreshold) return Infinity;
+        const aliveWindow = cfg.ALIVE_WINDOW;
+        const checkStart = Math.max(0, len - aliveWindow);
         const checkEnd = len - recentThreshold;
+        if (checkEnd <= checkStart) return Infinity;
         let minD2 = Infinity;
-        for (let i = 0; i < checkEnd; i++) {
+        for (let i = checkStart; i < checkEnd; i++) {
             const s = spine[i];
             const dx = cx - s.x, dy = cy - s.y;
             const d2 = dx * dx + dy * dy;
@@ -486,7 +491,8 @@ function generateTrack(cfg, count, rng) {
     }
 
     function wouldOverlapRecent(cx, cy, candWidth) {
-        const skipLast = 10, checkWindow = 120;
+        const skipLast = 10;
+        const checkWindow = Math.min(120, cfg.ALIVE_WINDOW);
         const len = spine.length;
         if (len < skipLast + 5) return false;
         const checkStart = Math.max(0, len - checkWindow);
