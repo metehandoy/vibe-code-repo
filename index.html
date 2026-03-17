@@ -633,35 +633,11 @@
                 });
             }
 
-            // Brake trail — emit tyre marks from rear wheels when braking
-            if (braking && this.speedMult > CFG.BRAKE_MIN_SPEED + 0.01) {
-                const backX = this.x - Math.cos(this.facing) * CFG.ARROW_LENGTH * 0.4;
-                const backY = this.y - Math.sin(this.facing) * CFG.ARROW_LENGTH * 0.4;
-                const nx = Math.cos(this.facing + Math.PI / 2);
-                const ny = Math.sin(this.facing + Math.PI / 2);
-                this.brakeTrail.push({
-                    x: backX + nx * CFG.ARROW_WIDTH * 0.35,
-                    y: backY + ny * CFG.ARROW_WIDTH * 0.35,
-                    age: 0
-                });
-                this.brakeTrail.push({
-                    x: backX - nx * CFG.ARROW_WIDTH * 0.35,
-                    y: backY - ny * CFG.ARROW_WIDTH * 0.35,
-                    age: 0
-                });
-            }
-
-            // Age and cull trails
+            // Age and cull trail
             for (let i = this.driftTrail.length - 1; i >= 0; i--) {
                 this.driftTrail[i].age += dt60;
                 if (this.driftTrail[i].age > 40) {
                     this.driftTrail.splice(i, 1);
-                }
-            }
-            for (let i = this.brakeTrail.length - 1; i >= 0; i--) {
-                this.brakeTrail[i].age += dt60;
-                if (this.brakeTrail[i].age > 80) {
-                    this.brakeTrail.splice(i, 1);
                 }
             }
         }
