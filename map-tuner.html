@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drift Arrow - Map Generation Tuner</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #0a0014;
+    color: #ccc;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#panel {
+    width: 340px;
+    min-width: 240px;
+    max-width: 600px;
+    height: 100vh;
+    overflow-y: auto;
+    background: #12081e;
+    border-right: 1px solid #333;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#panel::-webkit-scrollbar { width: 6px; }
+#panel::-webkit-scrollbar-track { background: #12081e; }
+#panel::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+#canvas-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+}
+#canvas-container.dragging { cursor: grabbing; }
+canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+}
+
+h2 {
+    color: #ff00ff;
+    font-size: 16px;
+    margin: 0 0 6px 0;
+    text-shadow: 0 0 10px #ff00ff;
+}
+
+.section {
+    background: #1a0e2a;
+    border: 1px solid #2a1a3a;
+    border-radius: 4px;
+    padding: 6px;
+    margin-bottom: 4px;
+}
+.section-title {
+    color: #00ffff;
+    font-size: 11px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.section-title:hover { color: #66ffff; }
+.section-title::after {
+    content: '▼';
+    font-size: 8px;
+    transition: transform 0.2s;
+}
+.section-title.collapsed::after { transform: rotate(-90deg); }
+
+.param-row {
+    display: flex;
+    align-items: center;
+    margin: 2px 0;
+    gap: 4px;
+}
+.param-row label {
+    flex: 0 0 110px;
+    font-size: 10px;
+    color: #aaa;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.param-row input[type="range"] {
+    flex: 1;
+    height: 14px;
+    accent-color: #ff00ff;
+    cursor: pointer;
+    min-width: 40px;
+}
+.param-row input[type="number"] {
+    width: 62px;
+    flex: 0 0 62px;
+    background: #0a0014;
+    border: 1px solid #333;
+    border-radius: 2px;
+    color: #ffee00;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 4px;
+    text-align: right;
+}
+.param-row input[type="number"]:focus {
+    border-color: #ff00ff;
+    outline: none;
+}
+.param-row input[type="number"]::-webkit-inner-spin-button,
+.param-row input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0;
+}
+.param-row input[type="number"] { -moz-appearance: textfield; }
+
+.btn-row { display: flex; gap: 4px; margin: 4px 0; }
+.btn {
+    flex: 1;
+    padding: 8px 4px;
+    background: #2a1a4a;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+.btn:hover { background: #3a2a5a; }
+.btn.generate { border-color: #ff00ff; color: #ff00ff; font-size: 13px; }
+.btn.generate:hover { background: #4a2a6a; box-shadow: 0 0 12px #ff00ff44; }
+.btn.save { border-color: #00ffa0; color: #00ffa0; }
+.btn.save:hover { box-shadow: 0 0 8px #00ffa044; }
+.btn.export { border-color: #00ffa0; color: #00ffa0; }
+.btn.import { border-color: #4488ff; color: #4488ff; }
+.btn.reset { border-color: #ff3366; color: #ff3366; }
+
+#status {
+    padding: 4px;
+    font-size: 10px;
+    color: #00ffa0;
+    min-height: 18px;
+}
+
+#stats {
+    padding: 4px;
+    font-size: 10px;
+    color: #888;
+    line-height: 1.5;
+}
+#stats span { color: #ffee00; }
+
+.seed-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 4px 0;
+}
+.seed-row label {
+    font-size: 10px;
+    color: #aaa;
+    flex: 0 0 50px;
+}
+.seed-row input {
+    flex: 1;
+    background: #0a0014;
+    border: 1px solid #333;
+    border-radius: 2px;
+    color: #ffee00;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 6px;
+}
+.seed-row input:focus { border-color: #ff00ff; outline: none; }
+.seed-row .btn { flex: 0 0 auto; padding: 4px 8px; font-size: 9px; }
+
+.zoom-info {
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    color: #666;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    pointer-events: none;
+    user-select: none;
+}
+
+.legend {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #888;
+    font-family: 'Consolas', monospace;
+    font-size: 10px;
+    pointer-events: none;
+    user-select: none;
+    line-height: 1.6;
+    background: rgba(10, 0, 20, 0.7);
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+.legend-color {
+    display: inline-block;
+    width: 10px;
+    height: 3px;
+    vertical-align: middle;
+    margin-right: 4px;
+    border-radius: 1px;
+}
+
+.controls-hint {
+    color: #666;
+    font-size: 10px;
+    padding: 4px;
+    border-top: 1px solid #222;
+    margin-top: auto;
+}
+</style>
+</head>
+<body>
+
+<div id="panel">
+    <h2>MAP GEN TUNER</h2>
+
+    <div class="btn-row">
+        <button class="btn generate" id="gen-btn" onclick="generate()">GENERATE MAP</button>
+    </div>
+
+    <div class="seed-row">
+        <label>Seed</label>
+        <input type="text" id="seed-input" placeholder="random" title="Leave blank for random seed">
+        <button class="btn" style="border-color:#ffaa00;color:#ffaa00" onclick="randomSeed()">Dice</button>
+    </div>
+
+    <div class="param-row" style="margin: 4px 0;">
+        <label style="flex:0 0 110px; font-size:10px; color:#aaa;">Segments</label>
+        <input type="range" id="slider-NUM_SEGMENTS" min="100" max="3000" step="50" value="500">
+        <input type="number" id="num-NUM_SEGMENTS" value="500" style="width:62px;flex:0 0 62px;background:#0a0014;border:1px solid #333;border-radius:2px;color:#ffee00;font-family:inherit;font-size:10px;font-weight:bold;padding:2px 4px;text-align:right;">
+    </div>
+
+    <div id="status"></div>
+    <div id="stats"></div>
+
+    <div class="btn-row">
+        <button class="btn save" onclick="saveSettings()">Save Settings</button>
+        <button class="btn export" onclick="exportSettings()">Export</button>
+    </div>
+    <div class="btn-row">
+        <button class="btn import" onclick="importSettings()">Import</button>
+        <button class="btn reset" onclick="resetDefaults()">Reset</button>
+    </div>
+
+    <div id="params"></div>
+
+    <div class="controls-hint">
+        Scroll: zoom in/out<br>
+        Click+drag: pan the map<br>
+        Double-click: reset view<br>
+        Segments = max alive at once
+    </div>
+</div>
+
+<div id="canvas-container">
+    <canvas id="map-canvas"></canvas>
+    <div class="zoom-info" id="zoom-info">100%</div>
+    <div class="legend">
+        <div><span class="legend-color" style="background:#ff00ff"></span> Track walls</div>
+        <div><span class="legend-color" style="background:#00ffff"></span> Spine center</div>
+        <div><span class="legend-color" style="background:#ffaa00"></span> Overlap evasion</div>
+        <div><span class="legend-color" style="background:#00ff66"></span> Start</div>
+        <div><span class="legend-color" style="background:#ff3366"></span> End</div>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// SEEDED RNG (Mulberry32)
+// ============================================================
+function mulberry32(seed) {
+    return function() {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+
+function hashString(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+        h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+    }
+    return h;
+}
+
+// ============================================================
+// DEFAULTS — map-generation-relevant parameters only
+// ============================================================
+const DEFAULTS = {
+    TRACK_WIDTH: 140,
+    MIN_TRACK_WIDTH: 38,
+    SEGMENT_LENGTH: 12,
+    ANGLE_SMOOTH: 0.4,
+    OVERLAP_MARGIN: 15,
+    SAFE_DIST_MULT: 3.5,
+    DIFFICULTY_RAMP: 0.00012,
+};
+
+const PARAM_SECTIONS = [
+    { title: 'Track Shape', params: [
+        ['TRACK_WIDTH',     'Max Width',     40, 300, 5],
+        ['MIN_TRACK_WIDTH', 'Min Width',     15, 150, 5],
+        ['SEGMENT_LENGTH',  'Seg Length',     4,  40, 1],
+        ['ANGLE_SMOOTH',    'Angle Smooth', 0.05, 1.0, 0.05],
+    ]},
+    { title: 'Overlap Avoidance', params: [
+        ['OVERLAP_MARGIN',  'Margin',       0,  60,  1],
+        ['SAFE_DIST_MULT',  'Safe Dist x',  1.0, 8.0, 0.25],
+    ]},
+    { title: 'Difficulty', params: [
+        ['DIFFICULTY_RAMP',  'Ramp Speed', 0.00002, 0.001, 0.00002],
+    ]},
+];
+
+// ============================================================
+// STATE
+// ============================================================
+let current = { ...DEFAULTS };
+let numSegments = 500;
+let generatedSpine = [];
+let evasionSegments = new Set(); // segments where overlap avoidance kicked in
+
+// Load saved
+try {
+    const saved = localStorage.getItem('driftArrowMapTuner');
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.params) Object.assign(current, parsed.params);
+        if (parsed.numSegments) numSegments = parsed.numSegments;
+        if (parsed.seed) document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('seed-input').value = parsed.seed;
+        });
+    }
+} catch (e) {}
+
+// ============================================================
+// UTILS
+// ============================================================
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ============================================================
+// TRACK GENERATOR (standalone, matches index.html logic)
+// ============================================================
+const PATTERN = { STRAIGHT: 0, CURVE: 1, CHICANE: 2, HAIRPIN: 3, SPIRAL: 4, SLALOM: 5 };
+const PATTERN_NAMES = ['STRAIGHT', 'CURVE', 'CHICANE', 'HAIRPIN', 'SPIRAL', 'SLALOM'];
+
+function generateTrack(cfg, count, rng) {
+    const spine = [];
+    const evasions = new Set();
+    let lastX = 0, lastY = 0;
+    let currentAngle = -Math.PI / 2;
+    let segmentIndex = 0;
+    let difficulty = 0;
+    let turnDir = 0, turnRemaining = 0, straightRemaining = 20;
+    let pattern = PATTERN.STRAIGHT, patternStep = 0, patternData = {};
+    let _cumAngle = 0, _lastDelta = 0, _lastTurnDir = 0;
+
+    // Pattern counts for stats
+    const patternCounts = { STRAIGHT: 0, CURVE: 0, CHICANE: 0, HAIRPIN: 0, SPIRAL: 0, SLALOM: 0 };
+    let evasionCount = 0;
+
+    function pickTurnDir() {
+        if (_lastTurnDir !== 0) {
+            const dir = -_lastTurnDir;
+            _lastTurnDir = dir;
+            return dir;
+        }
+        const dir = rng() < 0.5 ? -1 : 1;
+        _lastTurnDir = dir;
+        return dir;
+    }
+
+    function pickPattern() {
+        const d = difficulty;
+        const r = rng();
+        if (r < 0.06) {
+            pattern = PATTERN.STRAIGHT;
+            straightRemaining = 3 + Math.floor(rng() * 5 * (1 - d * 0.5));
+            _lastTurnDir = 0;
+            patternCounts.STRAIGHT++;
+        } else if (r < 0.25) {
+            pattern = PATTERN.CHICANE;
+            patternData = {
+                turns: 2 + Math.floor(rng() * 3 + d * 3),
+                segsPerTurn: 5 + Math.floor(rng() * 8),
+                sharpness: 0.07 + d * 0.12,
+            };
+            turnDir = pickTurnDir();
+            turnRemaining = patternData.segsPerTurn;
+            patternStep = 0;
+            patternCounts.CHICANE++;
+        } else if (r < 0.45) {
+            pattern = PATTERN.HAIRPIN;
+            turnDir = pickTurnDir();
+            turnRemaining = 10 + Math.floor(rng() * 16);
+            patternData = { sharpness: 0.08 + d * 0.08, maxTotal: Math.PI * 0.7, turned: 0 };
+            patternCounts.HAIRPIN++;
+        } else if (r < 0.62 && d > 0.15) {
+            pattern = PATTERN.SPIRAL;
+            turnDir = pickTurnDir();
+            turnRemaining = 14 + Math.floor(rng() * 18);
+            patternData = { baseSharp: 0.035, ramp: 0.002 + d * 0.0025, maxTotal: Math.PI * 0.85, turned: 0 };
+            patternStep = 0;
+            patternCounts.SPIRAL++;
+        } else if (r < 0.80 && d > 0.1) {
+            pattern = PATTERN.SLALOM;
+            patternData = {
+                freq: 0.2 + rng() * 0.18,
+                amp: 0.07 + d * 0.10,
+                length: 18 + Math.floor(rng() * 28),
+            };
+            turnRemaining = patternData.length;
+            patternStep = 0;
+            patternCounts.SLALOM++;
+        } else {
+            pattern = PATTERN.CURVE;
+            turnDir = pickTurnDir();
+            turnRemaining = 10 + Math.floor(rng() * 18);
+            patternData = { sharpness: 0.06 + d * 0.10, maxTotal: Math.PI * 0.6, turned: 0 };
+            patternCounts.CURVE++;
+        }
+    }
+
+    function minDistToOldTrack(cx, cy) {
+        const recentThreshold = 60;
+        const len = spine.length;
+        if (len < recentThreshold) return Infinity;
+        const checkEnd = len - recentThreshold;
+        let minD2 = Infinity;
+        for (let i = 0; i < checkEnd; i++) {
+            const s = spine[i];
+            const dx = cx - s.x, dy = cy - s.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < minD2) minD2 = d2;
+        }
+        return Math.sqrt(minD2);
+    }
+
+    function wouldOverlapRecent(cx, cy, candWidth) {
+        const skipLast = 10, checkWindow = 120;
+        const len = spine.length;
+        if (len < skipLast + 5) return false;
+        const checkStart = Math.max(0, len - checkWindow);
+        const checkEnd = len - skipLast;
+        const margin = cfg.OVERLAP_MARGIN;
+        for (let i = checkStart; i < checkEnd; i++) {
+            const s = spine[i];
+            const dx = cx - s.x, dy = cy - s.y;
+            const centerDist = Math.sqrt(dx * dx + dy * dy);
+            const combinedHW = (candWidth + s.width) / 2;
+            if (centerDist < combinedHW + margin) return true;
+        }
+        return false;
+    }
+
+    for (let n = 0; n < count; n++) {
+        segmentIndex++;
+        difficulty = Math.min(1, segmentIndex * cfg.DIFFICULTY_RAMP);
+        const prevAngle = currentAngle;
+        let targetDelta = 0;
+
+        if (straightRemaining > 0) {
+            straightRemaining--;
+            targetDelta = (rng() - 0.5) * 0.01;
+            _cumAngle *= 0.85;
+        } else if (turnRemaining > 0) {
+            turnRemaining--;
+            patternStep++;
+            switch (pattern) {
+                case PATTERN.CURVE: {
+                    const cTurn = patternData.sharpness;
+                    patternData.turned += cTurn;
+                    if (patternData.turned > patternData.maxTotal) turnRemaining = 0;
+                    else targetDelta = turnDir * cTurn;
+                    break;
+                }
+                case PATTERN.CHICANE:
+                    targetDelta = turnDir * patternData.sharpness;
+                    if (turnRemaining <= 0 && patternStep < patternData.turns) {
+                        turnDir *= -1;
+                        turnRemaining = patternData.segsPerTurn;
+                        patternStep++;
+                    }
+                    break;
+                case PATTERN.HAIRPIN: {
+                    const hTurn = patternData.sharpness;
+                    patternData.turned += hTurn;
+                    if (patternData.turned > patternData.maxTotal) turnRemaining = 0;
+                    else targetDelta = turnDir * hTurn;
+                    break;
+                }
+                case PATTERN.SPIRAL: {
+                    const sharp = patternData.baseSharp + patternStep * patternData.ramp;
+                    const sTurn = Math.min(sharp, 0.12);
+                    patternData.turned += sTurn;
+                    if (patternData.turned > patternData.maxTotal) turnRemaining = 0;
+                    else targetDelta = turnDir * sTurn;
+                    break;
+                }
+                case PATTERN.SLALOM: {
+                    const wave = Math.sin(patternStep * patternData.freq) * patternData.amp;
+                    targetDelta = wave;
+                    break;
+                }
+            }
+            if (turnRemaining <= 0 && pattern !== PATTERN.CHICANE) pickPattern();
+        } else {
+            pickPattern();
+        }
+
+        const smoothed = lerp(_lastDelta, targetDelta, cfg.ANGLE_SMOOTH);
+        _lastDelta = smoothed;
+        currentAngle += smoothed;
+
+        const angleDelta = currentAngle - prevAngle;
+        _cumAngle += angleDelta;
+        if (Math.abs(_cumAngle) > Math.PI * 0.45) {
+            turnRemaining = 0;
+            straightRemaining = Math.max(straightRemaining, 15);
+            _cumAngle = 0;
+            _lastTurnDir = 0;
+        }
+
+        let candX = lastX + Math.cos(currentAngle) * cfg.SEGMENT_LENGTH;
+        let candY = lastY + Math.sin(currentAngle) * cfg.SEGMENT_LENGTH;
+        const estWidth = spine.length > 0 ? spine[spine.length - 1].width : cfg.TRACK_WIDTH;
+
+        let recentOverlap = wouldOverlapRecent(candX, candY, estWidth);
+        const safeDist = cfg.TRACK_WIDTH * cfg.SAFE_DIST_MULT;
+        const lookSteps = [1, 3, 6, 10, 16, 24, 35, 50];
+        let distantThreat = false;
+        if (!recentOverlap) {
+            for (const step of lookSteps) {
+                const lx = lastX + Math.cos(currentAngle) * cfg.SEGMENT_LENGTH * step;
+                const ly = lastY + Math.sin(currentAngle) * cfg.SEGMENT_LENGTH * step;
+                if (minDistToOldTrack(lx, ly) < safeDist) { distantThreat = true; break; }
+            }
+        }
+
+        let evaded = false;
+        if (recentOverlap || distantThreat) {
+            evaded = true;
+            evasionCount++;
+            let bestAngle = currentAngle, bestScore = -Infinity;
+            for (let i = 0; i < 36; i++) {
+                const testAngle = currentAngle + (i / 36) * Math.PI * 2;
+                const tx = lastX + Math.cos(testAngle) * cfg.SEGMENT_LENGTH;
+                const ty = lastY + Math.sin(testAngle) * cfg.SEGMENT_LENGTH;
+                if (wouldOverlapRecent(tx, ty, estWidth)) continue;
+                let minScore = Infinity;
+                for (const step of lookSteps) {
+                    const lx = lastX + Math.cos(testAngle) * cfg.SEGMENT_LENGTH * step;
+                    const ly = lastY + Math.sin(testAngle) * cfg.SEGMENT_LENGTH * step;
+                    const d = minDistToOldTrack(lx, ly);
+                    if (d < minScore) minScore = d;
+                }
+                if (minScore > bestScore) { bestScore = minScore; bestAngle = testAngle; }
+            }
+            currentAngle = bestAngle;
+            turnRemaining = 0;
+            candX = lastX + Math.cos(currentAngle) * cfg.SEGMENT_LENGTH;
+            candY = lastY + Math.sin(currentAngle) * cfg.SEGMENT_LENGTH;
+        }
+
+        lastX = candX;
+        lastY = candY;
+
+        // Width
+        const baseW = lerp(cfg.TRACK_WIDTH, cfg.MIN_TRACK_WIDTH, difficulty * 0.5);
+        const widthPulse = Math.sin(segmentIndex * 0.04) * 25;
+        const widthPulse2 = Math.sin(segmentIndex * 0.012) * 15;
+        const widthPulse3 = Math.sin(segmentIndex * 0.007 + 2.0) * 12;
+        const widthJitter = (rng() - 0.5) * 8;
+        const pinch = Math.pow(Math.sin(segmentIndex * 0.016), 8) * -30;
+        let patternNarrow = 0;
+        if (pattern === PATTERN.HAIRPIN || pattern === PATTERN.SPIRAL) patternNarrow = -20 * (0.3 + difficulty);
+        else if (pattern === PATTERN.CHICANE || pattern === PATTERN.SLALOM) patternNarrow = -12 * (0.3 + difficulty);
+        else if (pattern === PATTERN.STRAIGHT) patternNarrow = 15;
+        const trackW = clamp(baseW + widthPulse + widthPulse2 + widthPulse3 + widthJitter + pinch + patternNarrow, cfg.MIN_TRACK_WIDTH, cfg.TRACK_WIDTH);
+
+        let smoothW = trackW;
+        if (spine.length > 0) smoothW = lerp(spine[spine.length - 1].width, trackW, 0.12);
+
+        const seg = {
+            x: lastX, y: lastY,
+            angle: currentAngle, width: smoothW,
+            index: segmentIndex, pattern: pattern, evaded: evaded,
+        };
+        spine.push(seg);
+        if (evaded) evasions.add(segmentIndex);
+    }
+
+    return { spine, evasions, patternCounts, evasionCount };
+}
+
+// ============================================================
+// CANVAS RENDERING — pan & zoom
+// ============================================================
+const canvas = document.getElementById('map-canvas');
+const ctx = canvas.getContext('2d');
+const container = document.getElementById('canvas-container');
+
+let viewX = 0, viewY = 0, zoom = 1;
+let isDragging = false, dragStartX = 0, dragStartY = 0, dragViewX = 0, dragViewY = 0;
+
+function resizeCanvas() {
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    render();
+}
+window.addEventListener('resize', resizeCanvas);
+
+// Pan
+container.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    dragStartX = e.clientX; dragStartY = e.clientY;
+    dragViewX = viewX; dragViewY = viewY;
+    container.classList.add('dragging');
+});
+window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    viewX = dragViewX + (e.clientX - dragStartX);
+    viewY = dragViewY + (e.clientY - dragStartY);
+    render();
+});
+window.addEventListener('mouseup', () => {
+    isDragging = false;
+    container.classList.remove('dragging');
+});
+
+// Zoom — centered on mouse
+container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    // World coords under mouse before zoom
+    const wxBefore = (mx - viewX) / zoom;
+    const wyBefore = (my - viewY) / zoom;
+
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    zoom = clamp(zoom * factor, 0.01, 50);
+
+    // Adjust view so the same world point stays under mouse
+    viewX = mx - wxBefore * zoom;
+    viewY = my - wyBefore * zoom;
+
+    document.getElementById('zoom-info').textContent = Math.round(zoom * 100) + '%';
+    render();
+}, { passive: false });
+
+// Double-click to fit
+container.addEventListener('dblclick', () => fitView());
+
+function fitView() {
+    if (generatedSpine.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of generatedSpine) {
+        const hw = s.width / 2;
+        const nx = -Math.sin(s.angle), ny = Math.cos(s.angle);
+        const lx = s.x + nx * hw, ly = s.y + ny * hw;
+        const rx = s.x - nx * hw, ry = s.y - ny * hw;
+        minX = Math.min(minX, lx, rx); maxX = Math.max(maxX, lx, rx);
+        minY = Math.min(minY, ly, ry); maxY = Math.max(maxY, ly, ry);
+    }
+    const pad = 40;
+    const w = maxX - minX, h = maxY - minY;
+    const cw = canvas.width, ch = canvas.height;
+    zoom = Math.min((cw - pad * 2) / w, (ch - pad * 2) / h);
+    zoom = clamp(zoom, 0.01, 50);
+    viewX = cw / 2 - (minX + w / 2) * zoom;
+    viewY = ch / 2 - (minY + h / 2) * zoom;
+    document.getElementById('zoom-info').textContent = Math.round(zoom * 100) + '%';
+    render();
+}
+
+// Pattern colors for the spine
+const PATTERN_COLORS = [
+    '#446688', // STRAIGHT — blue-grey
+    '#8844cc', // CURVE — purple
+    '#cc6600', // CHICANE — orange
+    '#cc2244', // HAIRPIN — red
+    '#2288cc', // SPIRAL — blue
+    '#22cc66', // SLALOM — green
+];
+
+function render() {
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#0a0014';
+    ctx.fillRect(0, 0, w, h);
+
+    if (generatedSpine.length < 2) {
+        ctx.fillStyle = '#444';
+        ctx.font = '14px Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Click GENERATE MAP to create a track', w / 2, h / 2);
+        return;
+    }
+
+    ctx.save();
+    ctx.translate(viewX, viewY);
+    ctx.scale(zoom, zoom);
+
+    const spine = generatedSpine;
+
+    // Draw track fill (dark)
+    ctx.beginPath();
+    for (let i = 0; i < spine.length; i++) {
+        const s = spine[i];
+        const nx = -Math.sin(s.angle), ny = Math.cos(s.angle);
+        const lx = s.x + nx * s.width / 2, ly = s.y + ny * s.width / 2;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+    }
+    for (let i = spine.length - 1; i >= 0; i--) {
+        const s = spine[i];
+        const nx = -Math.sin(s.angle), ny = Math.cos(s.angle);
+        const rx = s.x - nx * s.width / 2, ry = s.y - ny * s.width / 2;
+        ctx.lineTo(rx, ry);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#1a0e2a';
+    ctx.fill();
+
+    // Draw walls
+    ctx.lineWidth = Math.max(1, 1.5 / zoom);
+
+    // Left wall
+    ctx.beginPath();
+    for (let i = 0; i < spine.length; i++) {
+        const s = spine[i];
+        const nx = -Math.sin(s.angle), ny = Math.cos(s.angle);
+        const lx = s.x + nx * s.width / 2, ly = s.y + ny * s.width / 2;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+    }
+    ctx.strokeStyle = '#ff00ff';
+    ctx.stroke();
+
+    // Right wall
+    ctx.beginPath();
+    for (let i = 0; i < spine.length; i++) {
+        const s = spine[i];
+        const nx = -Math.sin(s.angle), ny = Math.cos(s.angle);
+        const rx = s.x - nx * s.width / 2, ry = s.y - ny * s.width / 2;
+        if (i === 0) ctx.moveTo(rx, ry); else ctx.lineTo(rx, ry);
+    }
+    ctx.strokeStyle = '#ff00ff';
+    ctx.stroke();
+
+    // Draw spine colored by pattern
+    ctx.lineWidth = Math.max(0.8, 1 / zoom);
+    for (let i = 1; i < spine.length; i++) {
+        const s0 = spine[i - 1], s1 = spine[i];
+        ctx.beginPath();
+        ctx.moveTo(s0.x, s0.y);
+        ctx.lineTo(s1.x, s1.y);
+        ctx.strokeStyle = s1.evaded ? '#ffaa00' : (PATTERN_COLORS[s1.pattern] || '#00ffff');
+        ctx.globalAlpha = s1.evaded ? 1.0 : 0.5;
+        ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Highlight evasion segments with dots
+    const dotR = Math.max(2, 3 / zoom);
+    for (const s of spine) {
+        if (s.evaded) {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, dotR, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffaa00';
+            ctx.fill();
+        }
+    }
+
+    // Start marker
+    const first = spine[0];
+    ctx.beginPath();
+    ctx.arc(first.x, first.y, Math.max(4, 6 / zoom), 0, Math.PI * 2);
+    ctx.fillStyle = '#00ff66';
+    ctx.fill();
+
+    // End marker
+    const last = spine[spine.length - 1];
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, Math.max(4, 6 / zoom), 0, Math.PI * 2);
+    ctx.fillStyle = '#ff3366';
+    ctx.fill();
+
+    ctx.restore();
+}
+
+// ============================================================
+// GENERATION
+// ============================================================
+function generate() {
+    const seedInput = document.getElementById('seed-input').value.trim();
+    const seed = seedInput || String(Date.now());
+    if (!seedInput) document.getElementById('seed-input').value = seed;
+
+    const rng = mulberry32(hashString(seed));
+    numSegments = parseInt(document.getElementById('num-NUM_SEGMENTS').value) || 500;
+
+    const t0 = performance.now();
+    const result = generateTrack(current, numSegments, rng);
+    const elapsed = (performance.now() - t0).toFixed(1);
+
+    generatedSpine = result.spine;
+    evasionSegments = result.evasions;
+
+    // Stats
+    const pc = result.patternCounts;
+    const totalPatterns = Object.values(pc).reduce((a, b) => a + b, 0) || 1;
+    let statsHTML = `<b style="color:#00ffff">Generated ${numSegments} segs in ${elapsed}ms</b> (seed: ${seed})<br>`;
+    statsHTML += `Evasions: <span>${result.evasionCount}</span> (${(result.evasionCount / numSegments * 100).toFixed(1)}%)<br>`;
+    statsHTML += `Patterns: `;
+    for (const name of PATTERN_NAMES) {
+        const c = pc[name] || 0;
+        statsHTML += `${name}: <span>${c}</span> `;
+    }
+    document.getElementById('stats').innerHTML = statsHTML;
+    showStatus('Map generated — scroll to zoom, drag to pan');
+
+    fitView();
+}
+
+// ============================================================
+// SLIDER NUM_SEGMENTS sync
+// ============================================================
+document.getElementById('slider-NUM_SEGMENTS').addEventListener('input', (e) => {
+    document.getElementById('num-NUM_SEGMENTS').value = e.target.value;
+    numSegments = parseInt(e.target.value);
+});
+document.getElementById('num-NUM_SEGMENTS').addEventListener('input', (e) => {
+    const v = parseInt(e.target.value);
+    if (!isNaN(v) && v > 0) {
+        numSegments = v;
+        document.getElementById('slider-NUM_SEGMENTS').value = clamp(v, 100, 3000);
+    }
+});
+
+// ============================================================
+// UI BUILD
+// ============================================================
+function buildUI() {
+    const container = document.getElementById('params');
+    container.innerHTML = '';
+
+    for (const section of PARAM_SECTIONS) {
+        const div = document.createElement('div');
+        div.className = 'section';
+
+        const title = document.createElement('div');
+        title.className = 'section-title';
+        title.textContent = section.title;
+        const body = document.createElement('div');
+        body.className = 'section-body';
+
+        title.addEventListener('click', () => {
+            const hidden = body.style.display === 'none';
+            body.style.display = hidden ? '' : 'none';
+            title.classList.toggle('collapsed', !hidden);
+        });
+
+        div.appendChild(title);
+
+        for (const [key, label, min, max, step] of section.params) {
+            const row = document.createElement('div');
+            row.className = 'param-row';
+
+            const lbl = document.createElement('label');
+            lbl.textContent = label;
+            lbl.title = key;
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = min; slider.max = max; slider.step = step;
+            slider.value = current[key];
+            slider.id = 'slider-' + key;
+
+            const numInput = document.createElement('input');
+            numInput.type = 'number';
+            numInput.step = step;
+            numInput.value = current[key];
+            numInput.id = 'num-' + key;
+
+            slider.addEventListener('input', () => {
+                const v = parseFloat(slider.value);
+                current[key] = v;
+                numInput.value = v;
+            });
+            numInput.addEventListener('input', () => {
+                const v = parseFloat(numInput.value);
+                if (!isNaN(v)) {
+                    current[key] = v;
+                    slider.value = clamp(v, min, max);
+                }
+            });
+            numInput.addEventListener('change', () => {
+                const v = parseFloat(numInput.value);
+                if (!isNaN(v)) {
+                    current[key] = v;
+                    slider.value = clamp(v, min, max);
+                }
+            });
+
+            row.appendChild(lbl);
+            row.appendChild(slider);
+            row.appendChild(numInput);
+            body.appendChild(row);
+        }
+
+        div.appendChild(body);
+        container.appendChild(div);
+    }
+}
+
+function updateUIFromCurrent() {
+    for (const section of PARAM_SECTIONS) {
+        for (const [key, , min, max] of section.params) {
+            const slider = document.getElementById('slider-' + key);
+            const numInput = document.getElementById('num-' + key);
+            if (slider) slider.value = clamp(current[key], min, max);
+            if (numInput) numInput.value = current[key];
+        }
+    }
+    document.getElementById('num-NUM_SEGMENTS').value = numSegments;
+    document.getElementById('slider-NUM_SEGMENTS').value = clamp(numSegments, 100, 3000);
+}
+
+// ============================================================
+// SAVE / EXPORT / IMPORT / RESET
+// ============================================================
+function saveSettings() {
+    const seed = document.getElementById('seed-input').value.trim();
+    localStorage.setItem('driftArrowMapTuner', JSON.stringify({
+        params: { ...current },
+        numSegments: numSegments,
+        seed: seed,
+    }));
+    showStatus('Settings saved to localStorage');
+}
+
+function exportSettings() {
+    const data = { params: { ...current }, numSegments: numSegments };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'map-gen-config.json'; a.click();
+    URL.revokeObjectURL(url);
+    showStatus('Exported as map-gen-config.json');
+}
+
+function importSettings() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json';
+    input.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const parsed = JSON.parse(reader.result);
+                if (parsed.params) {
+                    for (const key of Object.keys(DEFAULTS)) {
+                        if (key in parsed.params) current[key] = parsed.params[key];
+                    }
+                }
+                if (parsed.numSegments) numSegments = parsed.numSegments;
+                updateUIFromCurrent();
+                showStatus('Imported ' + file.name);
+            } catch (err) {
+                showStatus('Error: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    });
+    input.click();
+}
+
+function resetDefaults() {
+    current = { ...DEFAULTS };
+    numSegments = 500;
+    updateUIFromCurrent();
+    showStatus('Reset to defaults');
+}
+
+function randomSeed() {
+    document.getElementById('seed-input').value = Math.random().toString(36).slice(2, 10);
+}
+
+function showStatus(msg) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+buildUI();
+updateUIFromCurrent();
+requestAnimationFrame(() => {
+    resizeCanvas();
+    render();
+});
+</script>
+</body>
+</html>
