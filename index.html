@@ -499,14 +499,46 @@
             this.drifting = false;
             this.driftAmount = 0;          // how much we're sliding (for visuals)
             this.driftTrail = [];
+            this.brakeTrail = [];
+            this._lastInputDir = 0;        // previous frame's input direction
+            this._driftBrakeActive = false; // drift+brake mode (mobile: brake right after drift)
+            this._driftBrakeTimer = 0;     // ms held before drift+brake engages
+            this._driftBrakeDelay = 150;   // ms required to confirm drift+brake
         }
 
         update(inputDir, dt60, braking) {
             // inputDir: -1 = left, 0 = none, +1 = right
             // Direct controls: tap left = turn left, tap right = turn right
 
+            // Drift+brake detection with 150ms confirmation delay:
+            // Keyboard: holding direction + brake simultaneously
+            // Mobile/touch: braking immediately after drifting (no gap between inputs)
+            const dtMs = dt60 * (1000 / 60);
+            const wantsDriftBrake = (braking && inputDir !== 0) ||
+                (braking && inputDir === 0 && this._lastInputDir !== 0 && this.drifting);
+
             if (inputDir !== 0 && !braking) {
-                // Steer the facing angle
+                // Currently steering — remember direction, ready for drift+brake
+                this._lastInputDir = inputDir;
+                this._driftBrakeActive = false;
+                this._driftBrakeTimer = 0;
+            } else if (wantsDriftBrake) {
+                // Accumulate timer; only activate after delay
+                this._driftBrakeTimer += dtMs;
+                if (this._driftBrakeTimer >= this._driftBrakeDelay) {
+                    this._driftBrakeActive = true;
+                }
+            } else if (!braking && inputDir === 0) {
+                // Nothing held — clear state
+                this._driftBrakeActive = false;
+                this._driftBrakeTimer = 0;
+                this._lastInputDir = 0;
+            }
+
+            const driftBraking = this._driftBrakeActive;
+
+            if (inputDir !== 0) {
+                // Steer the facing angle (allowed during drift+brake too)
                 this.steerVel += inputDir * CFG.STEER_RATE * dt60;
                 this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
             } else {
@@ -518,8 +550,9 @@
             // Apply steering to facing angle
             this.facing += this.steerVel * dt60;
 
-            // When not pressing, gradually realign facing to movement direction
-            if (inputDir === 0) {
+            // When not pressing direction, gradually realign facing to movement direction
+            // During drift+brake, skip realign to lock the drift angle
+            if (inputDir === 0 && !driftBraking) {
                 const diff = angleDiff(this.facing, this.moveAngle);
                 this.facing += diff * CFG.REALIGN_RATE * dt60;
             }
@@ -527,7 +560,13 @@
             // Movement: velocity direction slowly catches up to facing direction
             // This is the core drift mechanic — low GRIP = more sliding
             const diff = angleDiff(this.moveAngle, this.facing);
-            this.moveAngle += diff * CFG.GRIP * dt60;
+            const gripDelta = diff * CFG.GRIP * dt60;
+            this.moveAngle += gripDelta;
+            if (driftBraking) {
+                // Rotate facing by the same amount so the drift angle stays stable
+                // The arrow keeps curving but the slide angle doesn't grow or shrink
+                this.facing += gripDelta;
+            }
 
             // Calculate drift amount (angle between facing and movement)
             this.driftAmount = Math.abs(angleDiff(this.facing, this.moveAngle));
@@ -1208,7 +1247,7 @@
             ctx.fill();
 
             // Center dashes (give sense of speed on straights)
-            ctx.strokeStyle = 'rgba(100, 50, 180, 0.25)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
             ctx.lineWidth = 2;
             for (let i = 0; i < spine.length; i++) {
                 const seg = spine[i];
@@ -1312,6 +1351,15 @@
             const a = arrow.angle;
             const len = CFG.ARROW_LENGTH;
             const hw = CFG.ARROW_WIDTH / 2;
+
+            // Brake tyre marks
+            for (const t of arrow.brakeTrail) {
+                const alpha = clamp(1 - t.age / 80, 0, 1) * 0.35;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = 'rgba(40, 20, 60, 0.8)';
+                ctx.fillRect(t.x - camX - 2, t.y - camY - 2, 4, 4);
+            }
+            ctx.globalAlpha = 1;
 
             // Drift trail
             for (const t of arrow.driftTrail) {
