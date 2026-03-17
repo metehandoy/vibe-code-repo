@@ -502,28 +502,36 @@
             this.brakeTrail = [];
             this._lastInputDir = 0;        // previous frame's input direction
             this._driftBrakeActive = false; // drift+brake mode (mobile: brake right after drift)
+            this._driftBrakeTimer = 0;     // ms held before drift+brake engages
+            this._driftBrakeDelay = 150;   // ms required to confirm drift+brake
         }
 
         update(inputDir, dt60, braking) {
             // inputDir: -1 = left, 0 = none, +1 = right
             // Direct controls: tap left = turn left, tap right = turn right
 
-            // Drift+brake detection:
+            // Drift+brake detection with 150ms confirmation delay:
             // Keyboard: holding direction + brake simultaneously
             // Mobile/touch: braking immediately after drifting (no gap between inputs)
+            const dtMs = dt60 * (1000 / 60);
+            const wantsDriftBrake = (braking && inputDir !== 0) ||
+                (braking && inputDir === 0 && this._lastInputDir !== 0 && this.drifting);
+
             if (inputDir !== 0 && !braking) {
                 // Currently steering — remember direction, ready for drift+brake
                 this._lastInputDir = inputDir;
                 this._driftBrakeActive = false;
-            } else if (braking && inputDir !== 0) {
-                // Keyboard: direction + brake at the same time
-                this._driftBrakeActive = true;
-            } else if (braking && inputDir === 0 && this._lastInputDir !== 0 && this.drifting) {
-                // Mobile: was drifting, now braking — activate drift+brake
-                this._driftBrakeActive = true;
+                this._driftBrakeTimer = 0;
+            } else if (wantsDriftBrake) {
+                // Accumulate timer; only activate after delay
+                this._driftBrakeTimer += dtMs;
+                if (this._driftBrakeTimer >= this._driftBrakeDelay) {
+                    this._driftBrakeActive = true;
+                }
             } else if (!braking && inputDir === 0) {
                 // Nothing held — clear state
                 this._driftBrakeActive = false;
+                this._driftBrakeTimer = 0;
                 this._lastInputDir = 0;
             }
 
