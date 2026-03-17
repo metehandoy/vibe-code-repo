@@ -551,10 +551,13 @@
 
             // Movement: velocity direction slowly catches up to facing direction
             // This is the core drift mechanic — low GRIP = more sliding
-            // During drift+brake, freeze the drift angle by skipping grip adjustment
             const diff = angleDiff(this.moveAngle, this.facing);
-            if (!driftBraking) {
-                this.moveAngle += diff * CFG.GRIP * dt60;
+            const gripDelta = diff * CFG.GRIP * dt60;
+            this.moveAngle += gripDelta;
+            if (driftBraking) {
+                // Rotate facing by the same amount so the drift angle stays stable
+                // The arrow keeps curving but the slide angle doesn't grow or shrink
+                this.facing += gripDelta;
             }
 
             // Calculate drift amount (angle between facing and movement)
@@ -1260,7 +1263,7 @@
             ctx.fill();
 
             // Center dashes (give sense of speed on straights)
-            ctx.strokeStyle = 'rgba(180, 100, 255, 0.55)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
             ctx.lineWidth = 2;
             for (let i = 0; i < spine.length; i++) {
                 const seg = spine[i];
@@ -1369,7 +1372,7 @@
             for (const t of arrow.brakeTrail) {
                 const alpha = clamp(1 - t.age / 80, 0, 1) * 0.35;
                 ctx.globalAlpha = alpha;
-                ctx.fillStyle = '#1a1a1a';
+                ctx.fillStyle = 'rgba(40, 20, 60, 0.8)';
                 ctx.fillRect(t.x - camX - 2, t.y - camY - 2, 4, 4);
             }
             ctx.globalAlpha = 1;
