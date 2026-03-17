@@ -53,6 +53,26 @@
         SPEED_RECOVERY_RELEASE: 0.06,
         DIFFICULTY_RAMP: 0.00012,
         METERS_PER_SEGMENT: 0.03,   // 1/100 scale — arrow ≈10cm, km takes very long
+        OVERLAP_MARGIN: 15,
+        // Agent steering
+        WANDER_WEIGHT: 1.0,
+        WANDER_FREQUENCY: 0.08,
+        WANDER_AMPLITUDE: 0.06,
+        AVOIDANCE_WEIGHT: 3.0,
+        AVOIDANCE_RADIUS: 500,
+        RHYTHM_WEIGHT: 0.7,
+        RHYTHM_FREQUENCY: 0.12,
+        RHYTHM_AMPLITUDE: 0.04,
+        EVENT_WEIGHT: 1.5,
+        EVENT_INTENSITY: 0.10,
+        EVENT_DECAY: 0.92,
+        EVENT_INTERVAL_MIN: 15,
+        EVENT_INTERVAL_MAX: 60,
+        CENTERING_WEIGHT: 0.15,
+        MAX_CURVATURE: 0.12,
+        CURVATURE_SMOOTHING: 0.35,
+        WIDTH_CURVATURE_COUPLING: 0.7,
+        WIDTH_TRANSITION_RATE: 0.12,
         // Timer
         START_TIME: 30,
         TIME_TOKEN_VALUE: 3.5,
@@ -90,10 +110,6 @@
     // ============================================================
     // PROCEDURAL TRACK
     // ============================================================
-    // Track pattern types for variety
-    const PATTERN = {
-        STRAIGHT: 0, CURVE: 1, CHICANE: 2, HAIRPIN: 3, SPIRAL: 4, SLALOM: 5
-    };
 
     class Track {
         constructor() {
@@ -103,12 +119,13 @@
             this.segmentIndex = 0;
             this.lastX = 0;
             this.lastY = 0;
-            this.turnDir = 0;
-            this.turnRemaining = 0;
-            this.straightRemaining = 0;
-            this.pattern = PATTERN.STRAIGHT;
-            this.patternStep = 0;
-            this.patternData = {};
+            // Agent steering state
+            this.agentCurvature = 0;
+            this.agentWanderPhase = 0;
+            this.agentRhythmPhase = 0;
+            this.agentEventTimer = 0;
+            this.agentEventCurvature = 0;
+            this.agentEventDir = 1;
         }
 
         init(startX, startY) {
@@ -120,81 +137,17 @@
             this.difficulty = 0;
             this.backWall = null;
             this.startWall = null;
-            this.straightRemaining = 20;
-            this.turnRemaining = 0;
-            this.pattern = PATTERN.STRAIGHT;
-            this.patternStep = 0;
-            this._cumAngle = 0;
-            this._lastDelta = 0;
-            this._lastTurnDir = 0; // force alternation: next turn goes opposite
+            // Agent state reset
+            this.agentCurvature = 0;
+            this.agentWanderPhase = 0;
+            this.agentRhythmPhase = 0;
+            // Delay the first event so the runway is clean
+            this.agentEventTimer = CFG.EVENT_INTERVAL_MIN + 10;
+            this.agentEventCurvature = 0;
+            this.agentEventDir = 1;
 
             for (let i = 0; i < CFG.LOOK_AHEAD + CFG.LOOK_BEHIND + 20; i++) {
                 this.generateNext();
-            }
-        }
-
-        _pickTurnDir() {
-            // Force alternation: always turn opposite to last turn
-            if (this._lastTurnDir !== 0) {
-                const dir = -this._lastTurnDir;
-                this._lastTurnDir = dir;
-                return dir;
-            }
-            const dir = Math.random() < 0.5 ? -1 : 1;
-            this._lastTurnDir = dir;
-            return dir;
-        }
-
-        _pickPattern() {
-            const d = this.difficulty;
-            const r = Math.random();
-            if (r < 0.06) {
-                // Short straight breather (rare)
-                this.pattern = PATTERN.STRAIGHT;
-                this.straightRemaining = 3 + Math.floor(Math.random() * 5 * (1 - d * 0.5));
-                this._lastTurnDir = 0;
-            } else if (r < 0.25) {
-                // S-curve chicane: alternating sharp turns
-                this.pattern = PATTERN.CHICANE;
-                this.patternData = {
-                    turns: 2 + Math.floor(Math.random() * 3 + d * 3),
-                    segsPerTurn: 5 + Math.floor(Math.random() * 8),
-                    sharpness: 0.07 + d * 0.12,
-                };
-                this.turnDir = this._pickTurnDir();
-                this.turnRemaining = this.patternData.segsPerTurn;
-                this.patternStep = 0;
-            } else if (r < 0.45) {
-                // Hairpin: tight U-turn
-                this.pattern = PATTERN.HAIRPIN;
-                this.turnDir = this._pickTurnDir();
-                this.turnRemaining = 10 + Math.floor(Math.random() * 16);
-                this.patternData = { sharpness: 0.08 + d * 0.08, maxTotal: Math.PI * 0.7 };
-                this.patternData.turned = 0;
-            } else if (r < 0.62 && d > 0.15) {
-                // Spiral: sustained turning that tightens
-                this.pattern = PATTERN.SPIRAL;
-                this.turnDir = this._pickTurnDir();
-                this.turnRemaining = 14 + Math.floor(Math.random() * 18);
-                this.patternData = { baseSharp: 0.035, ramp: 0.002 + d * 0.0025, maxTotal: Math.PI * 0.85 };
-                this.patternData.turned = 0;
-                this.patternStep = 0;
-            } else if (r < 0.80 && d > 0.1) {
-                // Slalom: rapid small wiggles
-                this.pattern = PATTERN.SLALOM;
-                this.patternData = {
-                    freq: 0.2 + Math.random() * 0.18,
-                    amp: 0.07 + d * 0.10,
-                    length: 18 + Math.floor(Math.random() * 28),
-                };
-                this.turnRemaining = this.patternData.length;
-                this.patternStep = 0;
-            } else {
-                // Normal curve
-                this.pattern = PATTERN.CURVE;
-                this.turnDir = this._pickTurnDir();
-                this.turnRemaining = 10 + Math.floor(Math.random() * 18);
-                this.patternData = { sharpness: 0.06 + d * 0.10, maxTotal: Math.PI * 0.6, turned: 0 };
             }
         }
 
@@ -216,11 +169,10 @@
         }
 
         // Check if candidate position would cause wall overlap with RECENT segments
-        // (which are skipped by the distant-segment check)
         // Returns true if walls would overlap
         _wouldOverlapRecent(cx, cy, candWidth) {
-            const skipLast = 10; // truly adjacent segments (always close)
-            const checkWindow = 120; // check segments 10-120 back
+            const skipLast = 10;
+            const checkWindow = 120;
             const len = this.spine.length;
             if (len < skipLast + 5) return false;
             const checkStart = Math.max(0, len - checkWindow);
@@ -240,166 +192,123 @@
         generateNext() {
             this.segmentIndex++;
             this.difficulty = Math.min(1, this.segmentIndex * CFG.DIFFICULTY_RAMP);
-            const prevAngle = this.currentAngle;
 
-            // Track target angle change for smoothing
-            let targetDelta = 0;
+            // Suppress events and dampen wander for initial runway segments
+            const isRunway = this.segmentIndex < 20;
 
-            if (this.straightRemaining > 0) {
-                this.straightRemaining--;
-                targetDelta = (Math.random() - 0.5) * 0.01;
-                // Decay cumulative angle during straights
-                this._cumAngle *= 0.85;
-            } else if (this.turnRemaining > 0) {
-                this.turnRemaining--;
-                this.patternStep++;
+            // ---- Behavior 1: Wander (layered sines, irrational frequency ratios) ----
+            this.agentWanderPhase += CFG.WANDER_FREQUENCY;
+            const wanderAmp = isRunway ? CFG.WANDER_AMPLITUDE * 0.15 : CFG.WANDER_AMPLITUDE;
+            const wander_raw = Math.sin(this.agentWanderPhase * 1.0)   * wanderAmp
+                             + Math.sin(this.agentWanderPhase * 0.618) * wanderAmp * 0.6
+                             + Math.sin(this.agentWanderPhase * 0.317) * wanderAmp * 0.3;
 
-                switch (this.pattern) {
-                    case PATTERN.CURVE: {
-                        const cTurn = this.patternData.sharpness;
-                        this.patternData.turned += cTurn;
-                        if (this.patternData.turned > this.patternData.maxTotal) {
-                            this.turnRemaining = 0;
-                        } else {
-                            targetDelta = this.turnDir * cTurn;
-                        }
-                        break;
-                    }
-                    case PATTERN.CHICANE:
-                        targetDelta = this.turnDir * this.patternData.sharpness;
-                        if (this.turnRemaining <= 0 && this.patternStep < this.patternData.turns) {
-                            this.turnDir *= -1;
-                            this.turnRemaining = this.patternData.segsPerTurn;
-                            this.patternStep++;
-                        }
-                        break;
-                    case PATTERN.HAIRPIN: {
-                        const hTurn = this.patternData.sharpness;
-                        this.patternData.turned += hTurn;
-                        if (this.patternData.turned > this.patternData.maxTotal) {
-                            this.turnRemaining = 0;
-                        } else {
-                            targetDelta = this.turnDir * hTurn;
-                        }
-                        break;
-                    }
-                    case PATTERN.SPIRAL: {
-                        const sharp = this.patternData.baseSharp + this.patternStep * this.patternData.ramp;
-                        const sTurn = Math.min(sharp, 0.12);
-                        this.patternData.turned += sTurn;
-                        if (this.patternData.turned > this.patternData.maxTotal) {
-                            this.turnRemaining = 0;
-                        } else {
-                            targetDelta = this.turnDir * sTurn;
-                        }
-                        break;
-                    }
-                    case PATTERN.SLALOM: {
-                        const wave = Math.sin(this.patternStep * this.patternData.freq) * this.patternData.amp;
-                        targetDelta = wave;
-                        break;
-                    }
-                }
+            // ---- Behavior 2: Avoidance (steers away from old track segments) ----
+            let avoidance_raw = 0;
+            if (this.spine.length > 60) {
+                const lookaheadSteps = [1, 3, 8, 15, 25];
+                const avoidRadius = CFG.AVOIDANCE_RADIUS;
+                let maxStrength = 0;
+                let bestDir = 0;
 
-                if (this.turnRemaining <= 0 && this.pattern !== PATTERN.CHICANE) {
-                    this._pickPattern();
-                }
-            } else {
-                this._pickPattern();
-            }
-
-            // Smooth angle changes — blend toward target to prevent jagged walls
-            if (!this._lastDelta) this._lastDelta = 0;
-            const smoothed = lerp(this._lastDelta, targetDelta, CFG.ANGLE_SMOOTH);
-            this._lastDelta = smoothed;
-            this.currentAngle += smoothed;
-
-            // Track cumulative angle — force straight if turning too much
-            const angleDelta = this.currentAngle - prevAngle;
-            this._cumAngle += angleDelta;
-            if (Math.abs(this._cumAngle) > Math.PI * 0.45) {
-                // Too much turning in one direction — force a straight breather
-                this.turnRemaining = 0;
-                this.straightRemaining = Math.max(this.straightRemaining, 15);
-                this._cumAngle = 0;
-                this._lastTurnDir = 0;
-            }
-
-            // Compute candidate position
-            let candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
-            let candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
-            const estWidth = this.spine.length > 0 ? this.spine[this.spine.length - 1].width : CFG.TRACK_WIDTH;
-
-            // Check 1: wall overlap with recent segments (prevents tight loops)
-            let recentOverlap = this._wouldOverlapRecent(candX, candY, estWidth);
-
-            // Check 2: predictive avoidance for distant segments
-            const safeDist = CFG.TRACK_WIDTH * CFG.SAFE_DIST_MULT;
-            const lookSteps = [1, 3, 6, 10, 16, 24, 35, 50];
-            let distantThreat = false;
-            if (!recentOverlap) {
-                for (const step of lookSteps) {
+                for (const step of lookaheadSteps) {
                     const lx = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH * step;
                     const ly = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH * step;
-                    if (this._minDistToOldTrack(lx, ly) < safeDist) {
-                        distantThreat = true;
-                        break;
+                    const d = this._minDistToOldTrack(lx, ly);
+                    if (d < avoidRadius) {
+                        const strength = Math.pow(1 - d / avoidRadius, 2);
+                        if (strength > maxStrength) {
+                            maxStrength = strength;
+                            // Find nearest old segment to determine which side to steer away from
+                            const recentThreshold = 60;
+                            const checkEnd = this.spine.length - recentThreshold;
+                            let nearX = 0, nearY = 0, minD2 = Infinity;
+                            for (let i = 0; i < checkEnd; i++) {
+                                const s = this.spine[i];
+                                const dx2 = lx - s.x, dy2 = ly - s.y;
+                                const d2 = dx2 * dx2 + dy2 * dy2;
+                                if (d2 < minD2) { minD2 = d2; nearX = s.x; nearY = s.y; }
+                            }
+                            // Project (near - lookahead) onto right-perp of heading
+                            const toNearX = nearX - lx;
+                            const toNearY = nearY - ly;
+                            const rightX = Math.cos(this.currentAngle + Math.PI / 2);
+                            const rightY = Math.sin(this.currentAngle + Math.PI / 2);
+                            const dot = toNearX * rightX + toNearY * rightY;
+                            // If old segment is to the right (dot > 0), steer left (-1)
+                            bestDir = dot > 0 ? -1 : 1;
+                        }
                     }
+                }
+                avoidance_raw = bestDir * maxStrength;
+
+                // Hard override: if next step would directly overlap recent segments, force avoidance
+                const estWidth = this.spine.length > 0 ? this.spine[this.spine.length - 1].width : CFG.TRACK_WIDTH;
+                const nextX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
+                const nextY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+                if (this._wouldOverlapRecent(nextX, nextY, estWidth)) {
+                    const overrideDir = bestDir !== 0 ? bestDir : 1;
+                    avoidance_raw = overrideDir * 2.0; // strong enough to saturate curvature after weighting
                 }
             }
 
-            if (recentOverlap || distantThreat) {
-                let bestAngle = this.currentAngle;
-                let bestScore = -Infinity;
-                for (let i = 0; i < 36; i++) {
-                    const testAngle = this.currentAngle + (i / 36) * Math.PI * 2;
-                    const tx = this.lastX + Math.cos(testAngle) * CFG.SEGMENT_LENGTH;
-                    const ty = this.lastY + Math.sin(testAngle) * CFG.SEGMENT_LENGTH;
-                    // Reject angles that cause recent wall overlap
-                    if (this._wouldOverlapRecent(tx, ty, estWidth)) continue;
-                    // Score by minimum distance at multiple look-ahead points
-                    let minScore = Infinity;
-                    for (const step of lookSteps) {
-                        const lx = this.lastX + Math.cos(testAngle) * CFG.SEGMENT_LENGTH * step;
-                        const ly = this.lastY + Math.sin(testAngle) * CFG.SEGMENT_LENGTH * step;
-                        const d = this._minDistToOldTrack(lx, ly);
-                        if (d < minScore) minScore = d;
-                    }
-                    if (minScore > bestScore) {
-                        bestScore = minScore;
-                        bestAngle = testAngle;
-                    }
+            // ---- Behavior 3: Rhythm (periodic tension/release oscillation) ----
+            this.agentRhythmPhase += CFG.RHYTHM_FREQUENCY;
+            const rhythm_raw = Math.sin(this.agentRhythmPhase) * CFG.RHYTHM_AMPLITUDE * (0.5 + this.difficulty * 0.5);
+
+            // ---- Behavior 4: Challenge events (decaying high-curvature impulses) ----
+            let event_raw = 0;
+            if (!isRunway) {
+                this.agentEventTimer--;
+                if (this.agentEventTimer <= 0) {
+                    this.agentEventDir = -this.agentEventDir; // alternate direction
+                    this.agentEventCurvature = CFG.EVENT_INTENSITY * (0.7 + this.difficulty * 0.3);
+                    const range = CFG.EVENT_INTERVAL_MAX - CFG.EVENT_INTERVAL_MIN;
+                    this.agentEventTimer = CFG.EVENT_INTERVAL_MIN + Math.floor(Math.random() * range);
                 }
-                this.currentAngle = bestAngle;
-                this.turnRemaining = 0;
-                candX = this.lastX + Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
-                candY = this.lastY + Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+                event_raw = this.agentEventDir * this.agentEventCurvature;
+                this.agentEventCurvature *= CFG.EVENT_DECAY;
+                if (this.agentEventCurvature < 0.005) this.agentEventCurvature = 0;
             }
 
-            this.lastX = candX;
-            this.lastY = candY;
+            // ---- Behavior 5: Centering (gentle bias back toward reference heading) ----
+            const referenceAngle = -Math.PI / 2;
+            let angDiff = this.currentAngle - referenceAngle;
+            while (angDiff > Math.PI) angDiff -= Math.PI * 2;
+            while (angDiff < -Math.PI) angDiff += Math.PI * 2;
+            const centering_raw = -angDiff;
 
-            // Dynamic width — multiple overlapping waves for organic feel
-            const baseW = lerp(CFG.TRACK_WIDTH, CFG.MIN_TRACK_WIDTH, this.difficulty * 0.5);
-            const widthPulse = Math.sin(this.segmentIndex * 0.04) * 25;
-            const widthPulse2 = Math.sin(this.segmentIndex * 0.012) * 15;
-            const widthPulse3 = Math.sin(this.segmentIndex * 0.007 + 2.0) * 12;  // slow wide breathing
-            const widthJitter = (Math.random() - 0.5) * 8;
-            // Occasional dramatic pinch every ~200 segments
-            const pinch = Math.pow(Math.sin(this.segmentIndex * 0.016), 8) * -30;
-            let patternNarrow = 0;
-            if (this.pattern === PATTERN.HAIRPIN || this.pattern === PATTERN.SPIRAL) {
-                patternNarrow = -20 * (0.3 + this.difficulty);
-            } else if (this.pattern === PATTERN.CHICANE || this.pattern === PATTERN.SLALOM) {
-                patternNarrow = -12 * (0.3 + this.difficulty);
-            } else if (this.pattern === PATTERN.STRAIGHT) {
-                patternNarrow = 15;
-            }
-            const trackW = clamp(baseW + widthPulse + widthPulse2 + widthPulse3 + widthJitter + pinch + patternNarrow, CFG.MIN_TRACK_WIDTH, CFG.TRACK_WIDTH);
+            // ---- Blend all behaviors into final curvature target ----
+            const finalDelta = wander_raw    * CFG.WANDER_WEIGHT
+                             + avoidance_raw * CFG.AVOIDANCE_WEIGHT
+                             + rhythm_raw    * CFG.RHYTHM_WEIGHT
+                             + event_raw     * CFG.EVENT_WEIGHT
+                             + centering_raw * CFG.CENTERING_WEIGHT;
 
-            let smoothW = trackW;
+            // Smooth and clamp curvature
+            this.agentCurvature = lerp(
+                this.agentCurvature,
+                clamp(finalDelta, -CFG.MAX_CURVATURE, CFG.MAX_CURVATURE),
+                CFG.CURVATURE_SMOOTHING
+            );
+            this.agentCurvature = clamp(this.agentCurvature, -CFG.MAX_CURVATURE, CFG.MAX_CURVATURE);
+
+            // Apply curvature to heading and advance position
+            this.currentAngle += this.agentCurvature;
+            this.lastX += Math.cos(this.currentAngle) * CFG.SEGMENT_LENGTH;
+            this.lastY += Math.sin(this.currentAngle) * CFG.SEGMENT_LENGTH;
+
+            // ---- Width: curvature-coupled — narrows in sharp turns, widens in straights ----
+            const maxWidth = CFG.TRACK_WIDTH;
+            const minWidth = CFG.MIN_TRACK_WIDTH;
+            const baseCurvatureWidth = lerp(maxWidth, minWidth,
+                Math.abs(this.agentCurvature) / CFG.MAX_CURVATURE * CFG.WIDTH_CURVATURE_COUPLING);
+            const difficultyNarrow = this.difficulty * 0.4 * (maxWidth - minWidth);
+            const breathingPulse = Math.sin(this.segmentIndex * 0.015) * 12;
+            const targetWidth = clamp(baseCurvatureWidth - difficultyNarrow + breathingPulse, minWidth, maxWidth);
+            let smoothW = targetWidth;
             if (this.spine.length > 0) {
-                smoothW = lerp(this.spine[this.spine.length - 1].width, trackW, 0.12);
+                smoothW = lerp(this.spine[this.spine.length - 1].width, targetWidth, CFG.WIDTH_TRANSITION_RATE);
             }
 
             const newSeg = {
@@ -711,9 +620,7 @@
     if (!CFG.HAZARD_NO_SPAWN_ZONE) CFG.HAZARD_NO_SPAWN_ZONE = 80;
     if (!CFG.HAZARD_SLOW_MULT) CFG.HAZARD_SLOW_MULT = 0.55;
     if (!CFG.HAZARD_SPEED_MULT) CFG.HAZARD_SPEED_MULT = 1.35;
-    if (!CFG.ANGLE_SMOOTH) CFG.ANGLE_SMOOTH = 0.4;
     if (!CFG.OVERLAP_MARGIN) CFG.OVERLAP_MARGIN = 15;
-    if (!CFG.SAFE_DIST_MULT) CFG.SAFE_DIST_MULT = 3.5;
 
     class TimeTokenManager {
         constructor() {
