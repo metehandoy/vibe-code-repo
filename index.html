@@ -220,9 +220,9 @@
             this.segmentIndex++;
             this.difficulty = Math.min(1, this.segmentIndex * CFG.DIFFICULTY_RAMP);
 
-            const isRunway = this.segmentIndex < 20;
-            // Ramp offset amplitude from 0 → full over ~30 segments after runway
-            const postRunwayRamp = isRunway ? 0 : Math.min(1, (this.segmentIndex - 20) / 30);
+            const isRunway = this.segmentIndex < 30;
+            // Ramp offset amplitude from 0 → full over ~40 segments after runway
+            const postRunwayRamp = isRunway ? 0 : Math.min(1, (this.segmentIndex - 30) / 40);
 
             // ---- Behavior 1: Wander (multi-octave value noise → steering input) ----
             this.agentWanderPhase += CFG.WANDER_FREQUENCY;
@@ -349,12 +349,14 @@
             this.prevCenterX = centerX;
             this.prevCenterY = centerY;
 
-            // ---- Width: agent drift-amount coupled ----
+            // ---- Width: agent drift-amount coupled, ramped in by distance ----
             const maxWidth = CFG.TRACK_WIDTH;
             const minWidth = CFG.MIN_TRACK_WIDTH;
             const driftAmount = Math.abs(moveDiff); // facing-moveAngle lag before this step's update
             const curvatureFraction = clamp(driftAmount / 0.5, 0, 1);
-            const baseWidth = lerp(maxWidth, minWidth, curvatureFraction * CFG.WIDTH_CURVATURE_COUPLING);
+            // Ramp coupling from 0 → full over first 300 segments so early game stays wide
+            const couplingRamp = clamp(this.segmentIndex / 300, 0, 1);
+            const baseWidth = lerp(maxWidth, minWidth, curvatureFraction * CFG.WIDTH_CURVATURE_COUPLING * couplingRamp);
             const difficultyNarrow = this.difficulty * 0.4 * (maxWidth - minWidth);
             const breathingPulse = Math.sin(this.segmentIndex * 0.015) * 12;
             const targetWidth = clamp(baseWidth - difficultyNarrow + breathingPulse, minWidth, maxWidth);
