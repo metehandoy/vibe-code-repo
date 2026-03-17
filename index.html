@@ -107,6 +107,18 @@
         return Math.min(d1, d2);
     }
 
+    // Simple hash-based value noise — output range: -1..1
+    function valueNoise(t) {
+        const i = Math.floor(t);
+        const f = t - i;
+        const smooth = f * f * (3 - 2 * f);
+        const hash = (n) => {
+            const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+            return x - Math.floor(x);
+        };
+        return lerp(hash(i) * 2 - 1, hash(i + 1) * 2 - 1, smooth);
+    }
+
     // ============================================================
     // PROCEDURAL TRACK
     // ============================================================
@@ -196,12 +208,13 @@
             // Suppress events and dampen wander for initial runway segments
             const isRunway = this.segmentIndex < 20;
 
-            // ---- Behavior 1: Wander (layered sines, irrational frequency ratios) ----
+            // ---- Behavior 1: Wander (multi-octave value noise) ----
             this.agentWanderPhase += CFG.WANDER_FREQUENCY;
             const wanderAmp = isRunway ? CFG.WANDER_AMPLITUDE * 0.15 : CFG.WANDER_AMPLITUDE;
-            const wander_raw = Math.sin(this.agentWanderPhase * 1.0)   * wanderAmp
-                             + Math.sin(this.agentWanderPhase * 0.618) * wanderAmp * 0.6
-                             + Math.sin(this.agentWanderPhase * 0.317) * wanderAmp * 0.3;
+            const n1 = valueNoise(this.agentWanderPhase * 1.0);
+            const n2 = valueNoise(this.agentWanderPhase * 2.37) * 0.5;
+            const n3 = valueNoise(this.agentWanderPhase * 5.81) * 0.25;
+            const wander_raw = (n1 + n2 + n3) * wanderAmp;
 
             // ---- Behavior 2: Avoidance (steers away from old track segments) ----
             let avoidance_raw = 0;
