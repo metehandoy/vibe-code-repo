@@ -46,6 +46,28 @@ canvas {
     top: 0; left: 0;
 }
 
+#toggle-panel {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    width: 36px;
+    height: 36px;
+    background: #12081e;
+    border: 1px solid #ff00ff;
+    border-radius: 4px;
+    color: #ff00ff;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+#toggle-panel:hover { background: #2a1a4a; box-shadow: 0 0 8px #ff00ff44; }
+body.panel-hidden #panel { display: none; }
+body.panel-hidden #toggle-panel { left: 8px; }
+
 h2 {
     color: #ff00ff;
     font-size: 16px;
@@ -274,6 +296,7 @@ h2 {
 </div>
 
 <div id="canvas-container">
+    <button id="toggle-panel" onclick="togglePanel()" title="Toggle panel">&#9776;</button>
     <canvas id="map-canvas"></canvas>
     <div class="zoom-info" id="zoom-info">100%</div>
     <div class="legend">
@@ -1008,6 +1031,14 @@ function resetDefaults() {
     numSegments = 500;
     updateUIFromCurrent();
     showStatus('Reset to defaults');
+}
+
+function togglePanel() {
+    document.body.classList.toggle('panel-hidden');
+    const btn = document.getElementById('toggle-panel');
+    btn.innerHTML = document.body.classList.contains('panel-hidden') ? '&#9776;' : '&#9776;';
+    btn.title = document.body.classList.contains('panel-hidden') ? 'Show panel' : 'Hide panel';
+    requestAnimationFrame(() => { resizeCanvas(); });
 }
 
 function randomSeed() {
