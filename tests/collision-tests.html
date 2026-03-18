@@ -16,52 +16,17 @@
 <body>
 <h1>Drift Arrow – Collision Tests</h1>
 <div id="results"></div>
+
+<!-- Load game modules (paths relative to tests/) -->
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/tokens.js"></script>
 <script>
 'use strict';
 
 // ============================================================
-// Extracted game utilities and config for testing
+// Test-specific helpers (not part of the game code)
 // ============================================================
-const CFG = {
-    ARROW_SPEED: 3.5,
-    ARROW_LENGTH: 22,
-    ARROW_WIDTH: 10,
-    TRACK_WIDTH: 140,
-    MIN_TRACK_WIDTH: 38,
-    TOKEN_RADIUS: 12,
-    HAZARD_RADIUS: 10,
-    DEATH_HAZARD_RADIUS: 5,
-    TIME_TOKEN_VALUE: 4,
-    HAZARD_EFFECT_DUR: 180,
-    HAZARD_SLOW_MULT: 0.55,
-    HAZARD_SPEED_MULT: 1.35
-};
-
-const HAZARD = { SLOW: 0, SPEED: 1, DEATH: 2 };
-
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-function dist(x1, y1, x2, y2) { return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2); }
-
-function distPointToSeg(px, py, ax, ay, bx, by) {
-    const dx = bx - ax, dy = by - ay;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return dist(px, py, ax, ay);
-    const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
-    return dist(px, py, ax + t * dx, ay + t * dy);
-}
-
-function distToArrowWings(px, py, arrowX, arrowY, facing) {
-    const cos = Math.cos(facing), sin = Math.sin(facing);
-    const nx = -sin, ny = cos;
-    const tipX = arrowX + cos * CFG.ARROW_LENGTH * 0.6;
-    const tipY = arrowY + sin * CFG.ARROW_LENGTH * 0.6;
-    const backX = arrowX - cos * CFG.ARROW_LENGTH * 0.4;
-    const backY = arrowY - sin * CFG.ARROW_LENGTH * 0.4;
-    const hw = CFG.ARROW_WIDTH / 2;
-    const d1 = distPointToSeg(px, py, tipX, tipY, backX + nx * hw, backY + ny * hw);
-    const d2 = distPointToSeg(px, py, tipX, tipY, backX - nx * hw, backY - ny * hw);
-    return Math.min(d1, d2);
-}
 
 // Arrow wing corner positions (matching visual rendering)
 function getArrowCorners(arrowX, arrowY, facing) {
@@ -215,9 +180,6 @@ section('distToArrowWings Distance Checks');
     assert(dAbove > 10, 'Distance to point 20 above center is > 10');
 
     // Point on the wing edge midpoint (halfway along left wing)
-    const midX = (len * 0.6 + (-len * 0.4)) / 2; // midpoint x of wing edge
-    const midY = (-hw) / 2; // midpoint y between tip(0) and backLeft(-hw) — not exact, but approximate
-    // Actually compute exact midpoint of the left wing segment
     const tipX = len * 0.6, tipY = 0;
     const blX = -len * 0.4, blY = -hw;
     const eMidX = (tipX + blX) / 2, eMidY = (tipY + blY) / 2;

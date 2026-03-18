@@ -1,299 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Drift Arrow — Dev</title>
-<style>
-/* ---- Game canvas (fills whole screen) ---- */
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body {
-    width: 100%; height: 100%; overflow: hidden;
-    background: #0a0014; touch-action: none;
-    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
-}
-canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; left: 0; }
-
-/* ---- Dev toggle button (always visible) ---- */
-#dev-toggle-btn {
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    z-index: 1000;
-    background: rgba(18, 8, 30, 0.85);
-    color: #ff00ff;
-    border: 1px solid #ff00ff55;
-    border-radius: 4px;
-    padding: 6px 12px;
-    font-family: 'Consolas', 'Monaco', monospace;
-    font-size: 11px;
-    font-weight: bold;
-    cursor: pointer;
-    text-shadow: 0 0 6px #ff00ff;
-    box-shadow: 0 0 10px #ff00ff33;
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: manipulation;
-}
-#dev-toggle-btn:hover { background: rgba(40, 10, 60, 0.95); border-color: #ff00ff; }
-
-/* ---- Dev panel overlay ---- */
-#dev-panel {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 310px;
-    z-index: 999;
-    background: rgba(12, 5, 22, 0.97);
-    border-right: 1px solid #2a1a3a;
-    display: flex;
-    flex-direction: column;
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-}
-#dev-panel.open { transform: translateX(0); }
-
-#dev-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 10px 8px;
-    flex-shrink: 0;
-    border-bottom: 1px solid #2a1a3a;
-}
-#dev-panel-header h2 {
-    color: #ff00ff;
-    font-size: 14px;
-    font-family: 'Consolas', 'Monaco', monospace;
-    text-shadow: 0 0 8px #ff00ff;
-    margin: 0;
-}
-#dev-panel-close {
-    background: none;
-    border: none;
-    color: #666;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-    font-family: inherit;
-}
-#dev-panel-close:hover { color: #fff; }
-
-#dev-panel-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-family: 'Consolas', 'Monaco', monospace;
-    font-size: 12px;
-    color: #ccc;
-}
-/* Allow vertical touch-scroll inside the panel despite touch-action:none on body */
-#dev-panel, #dev-panel-body {
-    touch-action: pan-y;
-    -webkit-overflow-scrolling: touch;
-}
-#dev-panel-body::-webkit-scrollbar { width: 5px; }
-#dev-panel-body::-webkit-scrollbar-track { background: transparent; }
-#dev-panel-body::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-
-/* Mobile: slide up from bottom */
-@media (max-width: 768px) {
-    #dev-panel {
-        top: auto;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        width: 100%;
-        height: 65vh;
-        border-right: none;
-        border-top: 1px solid #2a1a3a;
-        transform: translateY(100%);
-    }
-    #dev-panel.open { transform: translateY(0); }
-    #dev-toggle-btn { top: auto; bottom: 16px; right: 16px; font-size: 12px; padding: 8px 14px; }
-}
-
-/* ---- Panel UI components ---- */
-.btn-row {
-    display: flex;
-    gap: 4px;
-    margin: 2px 0;
-}
-.btn {
-    flex: 1;
-    padding: 6px 4px;
-    background: #1a0e2a;
-    color: #fff;
-    border: 1px solid #333;
-    border-radius: 3px;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: bold;
-    text-transform: uppercase;
-    touch-action: manipulation;
-}
-.btn:hover { background: #2a1a3a; }
-.btn.apply { border-color: #ff00ff; color: #ff00ff; font-size: 12px; padding: 8px 4px; }
-.btn.apply:hover { background: #3a1a4a; box-shadow: 0 0 8px #ff00ff44; }
-.btn.export { border-color: #00ffa0; color: #00ffa0; }
-.btn.import { border-color: #4488ff; color: #4488ff; }
-.btn.reset  { border-color: #ff3366; color: #ff3366; }
-.changed { border-color: #ff00ff !important; box-shadow: 0 0 6px #ff00ff55; }
-
-#status {
-    padding: 3px 2px;
-    font-size: 10px;
-    color: #00ffa0;
-    min-height: 16px;
-}
-
-.section {
-    background: #150a22;
-    border: 1px solid #221533;
-    border-radius: 4px;
-    padding: 6px;
-    margin-bottom: 2px;
-}
-.section-title {
-    color: #00ffff;
-    font-size: 10px;
-    font-weight: bold;
-    margin-bottom: 4px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    cursor: pointer;
-    user-select: none;
-}
-.section-title:hover { color: #66ffff; }
-
-.param-row {
-    display: flex;
-    align-items: center;
-    margin: 2px 0;
-    gap: 4px;
-}
-.param-row label {
-    flex: 0 0 96px;
-    font-size: 10px;
-    color: #999;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-.param-row input[type="range"] {
-    flex: 1;
-    height: 14px;
-    accent-color: #ff00ff;
-    cursor: pointer;
-    min-width: 40px;
-}
-.param-row input[type="number"] {
-    width: 56px;
-    flex: 0 0 56px;
-    background: #0a0014;
-    border: 1px solid #333;
-    border-radius: 2px;
-    color: #ffee00;
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 2px 4px;
-    text-align: right;
-}
-.param-row input[type="number"]:focus { border-color: #ff00ff; outline: none; }
-.param-row input[type="number"]::-webkit-inner-spin-button,
-.param-row input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.param-row input[type="number"] { -moz-appearance: textfield; }
-
-.controls-hint {
-    color: #555;
-    font-size: 10px;
-    padding: 6px 2px 2px;
-    border-top: 1px solid #1a1a2a;
-    margin-top: auto;
-    line-height: 1.6;
-}
-
-/* Scroll buttons — sticky footer inside the panel */
-#dev-scroll-btns {
-    display: flex;
-    gap: 4px;
-    padding: 6px 8px;
-    border-top: 1px solid #2a1a3a;
-    flex-shrink: 0;
-    background: rgba(12, 5, 22, 0.97);
-}
-.scroll-btn {
-    flex: 1;
-    padding: 10px 4px;
-    background: #1a0e2a;
-    color: #aaa;
-    border: 1px solid #333;
-    border-radius: 3px;
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    font-family: inherit;
-    touch-action: manipulation;
-    user-select: none;
-    -webkit-user-select: none;
-}
-.scroll-btn:active { background: #2a1a3a; color: #fff; border-color: #ff00ff; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Drift Arrow</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden;
+            background: #0a0014; touch-action: none;
+            -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+        }
+        canvas { display: block; width: 100%; height: 100%; }
+    </style>
 </head>
 <body>
-
-<canvas id="game"></canvas>
-
-<button id="dev-toggle-btn" onclick="togglePanel()">DEV ▶</button>
-
-<div id="dev-panel">
-    <div id="dev-panel-header">
-        <h2>DRIFT ARROW DEV</h2>
-        <button id="dev-panel-close" onclick="closePanel()">✕</button>
-    </div>
-    <div id="dev-panel-body">
-        <div class="btn-row">
-            <button class="btn apply" id="apply-btn" onclick="applyConfig()">APPLY + RESTART</button>
-        </div>
-        <div class="btn-row">
-            <button class="btn export" onclick="exportConfig()">Export</button>
-            <button class="btn import" onclick="importConfig()">Import</button>
-            <button class="btn reset"  onclick="resetDefaults()">Reset</button>
-        </div>
-        <div id="status"></div>
-        <div id="params"></div>
-        <div class="controls-hint">
-            A/D or &lt;&gt; arrows: steer &nbsp;|&nbsp; Space: brake<br>
-            Touch left/right edge: steer<br>
-            Slider changes take effect on Apply.
-        </div>
-    </div>
-    <div id="dev-scroll-btns">
-        <button class="scroll-btn" id="scroll-up-btn">▲</button>
-        <button class="scroll-btn" id="scroll-dn-btn">▼</button>
-    </div>
-</div>
-
-<script>
-'use strict';
-// === GAME CODE BEGIN (auto-synced from index.html) ===
+    <canvas id="game"></canvas>
+    <script>
     'use strict';
 
 // ============================================================
 // CONFIG
 // ============================================================
-const CFG = {
+// Read config overrides from URL hash (used by dev.html)
+let __hashCfg = null;
+try {
+    if (window.location.hash.length > 1) {
+        __hashCfg = JSON.parse(decodeURIComponent(window.location.hash.slice(1)));
+    }
+} catch(e) {}
+
+const CFG = __hashCfg || window.__DRIFT_CFG || {
     ARROW_SPEED: 3.5,
     STEER_RATE: 0.014,          // slightly slower rotation for less dizziness
     STEER_MAX: 0.045,           // lower cap to prevent extreme spinning
@@ -345,11 +84,6 @@ const CFG = {
     TIME_TOKEN_VALUE: 3.5,
     TOKEN_RADIUS: 10,
 };
-// Overlay saved dev config from localStorage
-try {
-    const _devSaved = localStorage.getItem('driftArrowDevConfig');
-    if (_devSaved) Object.assign(CFG, JSON.parse(_devSaved));
-} catch(e) {}
 
 // ============================================================
 // UTILS
@@ -1831,7 +1565,6 @@ class Game {
         this.distance = 0;
         this.timeLeft = 0;
         this.isNewHigh = false;
-            this.stopped = false;
         this.gameOverDelay = 0;
         this.lastSegPassed = 0;
         this.lastTime = 0;
@@ -1868,7 +1601,6 @@ class Game {
         this.distance = 0;
         this.timeLeft = CFG.START_TIME;
         this.isNewHigh = false;
-            this.stopped = false;
         this.gameOverDelay = 0;
         this.lastSegPassed = 0;
         this.peakSegIdx = 0;
@@ -2217,12 +1949,10 @@ class Game {
     }
 
     loop(timestamp) {
-        if (this.stopped) return;
         this.update(timestamp);
         this.render();
         requestAnimationFrame((t) => this.loop(t));
     }
-    stop() { this.stopped = true; }
 
     start() {
         requestAnimationFrame((t) => this.loop(t));
@@ -2232,336 +1962,13 @@ class Game {
 // ============================================================
 // BOOTSTRAP
 // ============================================================
+// Expose for dev.html
 window.__DRIFT_CFG_LIVE = CFG;
 
 const canvas = document.getElementById('game');
-let _currentGame = null;
-function _startGame() {
-    if (_currentGame) _currentGame.stop();
-    _currentGame = new Game(canvas);
-    _currentGame.start();
-}
-_startGame();
+const game = new Game(canvas);
+game.start();
 
-    // === GAME CODE END ===
-
-// ============================================================
-// DEV PANEL
-// ============================================================
-
-// ---- Scroll buttons ----
-(function () {
-    const STEP = 120, INTERVAL = 60;
-    let _timer = null;
-
-    function startScroll(dir) {
-        const body = document.getElementById('dev-panel-body');
-        body.scrollTop += dir * STEP;
-        _timer = setInterval(() => { body.scrollTop += dir * STEP; }, INTERVAL);
-    }
-    function stopScroll() { clearInterval(_timer); _timer = null; }
-
-    ['up', 'dn'].forEach((id, i) => {
-        const dir = i === 0 ? -1 : 1;
-        const btn = document.getElementById('scroll-' + id + '-btn');
-        btn.addEventListener('mousedown',  () => startScroll(dir));
-        btn.addEventListener('touchstart', () => startScroll(dir), { passive: true });
-        btn.addEventListener('mouseup',   stopScroll);
-        btn.addEventListener('mouseleave', stopScroll);
-        btn.addEventListener('touchend',  stopScroll);
-        btn.addEventListener('touchcancel', stopScroll);
-    });
-}());
-
-function togglePanel() {
-    const panel = document.getElementById('dev-panel');
-    const btn   = document.getElementById('dev-toggle-btn');
-    panel.classList.toggle('open');
-    btn.textContent = panel.classList.contains('open') ? 'DEV ◀' : 'DEV ▶';
-}
-function closePanel() {
-    document.getElementById('dev-panel').classList.remove('open');
-    document.getElementById('dev-toggle-btn').textContent = 'DEV ▶';
-}
-
-// Hardcoded defaults — must match CFG in index.html exactly
-const DEFAULTS = {
-    ARROW_SPEED: 3.5,
-    STEER_RATE: 0.014,
-    STEER_MAX: 0.045,
-    GRIP: 0.025,
-    REALIGN_RATE: 0.04,
-    DRIFT_DRAG_EXP: 2.0,
-    DRIFT_DRAG_SCALE: 0.008,
-    ARROW_LENGTH: 22,
-    ARROW_WIDTH: 10,
-    BRAKE_DECEL: 0.02,
-    BRAKE_MIN_SPEED: 0.05,
-    SPEED_RECOVERY: 0.012,
-    SPEED_RECOVERY_RELEASE: 0.06,
-    TRACK_WIDTH: 140,
-    MIN_TRACK_WIDTH: 38,
-    SEGMENT_LENGTH: 12,
-    LOOK_AHEAD: 120,
-    LOOK_BEHIND: 100,
-    OVERLAP_MARGIN: 15,
-    DIFFICULTY_RAMP: 0.00012,
-    METERS_PER_SEGMENT: 0.03,
-    WANDER_WEIGHT: 1.0,
-    WANDER_FREQUENCY: 0.08,
-    WANDER_AMPLITUDE: 0.06,
-    AVOIDANCE_WEIGHT: 3.0,
-    AVOIDANCE_RADIUS: 500,
-    RHYTHM_WEIGHT: 0.7,
-    RHYTHM_FREQUENCY: 0.12,
-    RHYTHM_AMPLITUDE: 0.04,
-    EVENT_WEIGHT: 1.5,
-    EVENT_INTENSITY: 0.10,
-    EVENT_DECAY: 0.92,
-    EVENT_INTERVAL_MIN: 15,
-    EVENT_INTERVAL_MAX: 60,
-    CENTERING_WEIGHT: 0.15,
-    WIDTH_CURVATURE_COUPLING: 0.7,
-    WIDTH_TRANSITION_RATE: 0.12,
-    AGENT_STEER_RATE: 0.011,
-    AGENT_STEER_MAX: 0.038,
-    AGENT_GRIP: 0.030,
-    OFFSET_FREQUENCY: 0.02,
-    OFFSET_AMPLITUDE: 0.8,
-    AGENT_MARGIN: 18,
-    START_TIME: 30,
-    TIME_TOKEN_VALUE: 3.5,
-    TOKEN_RADIUS: 10,
-    TOKEN_MIN_GAP: 25,
-    TOKEN_SPAWN_CHANCE: 0.025,
-    TOKEN_NO_SPAWN_ZONE: 40,
-    HAZARD_RADIUS: 10,
-    HAZARD_EFFECT_DUR: 180,
-    HAZARD_MIN_GAP: 10,
-    HAZARD_SPAWN_CHANCE: 0.02,
-    HAZARD_NO_SPAWN_ZONE: 80,
-    HAZARD_SLOW_MULT: 0.55,
-    HAZARD_SPEED_MULT: 1.12,
-};
-
-const PARAM_SECTIONS = [
-    { title: 'Arrow / Driving', params: [
-        ['ARROW_SPEED', 'Speed', 1, 10, 0.1],
-        ['STEER_RATE', 'Steer Rate', 0.002, 0.05, 0.001],
-        ['STEER_MAX', 'Steer Max', 0.01, 0.15, 0.005],
-        ['GRIP', 'Grip', 0.005, 0.1, 0.005],
-        ['REALIGN_RATE', 'Realign Rate', 0.01, 0.15, 0.005],
-        ['DRIFT_DRAG_EXP', 'Drift Drag Exp', 1, 4, 0.1],
-        ['DRIFT_DRAG_SCALE', 'Drift Drag Scl', 0.001, 0.03, 0.001],
-        ['ARROW_LENGTH', 'Arrow Length', 10, 40, 1],
-        ['ARROW_WIDTH', 'Arrow Width', 4, 20, 1],
-    ]},
-    { title: 'Braking', params: [
-        ['BRAKE_DECEL', 'Deceleration', 0.005, 0.1, 0.005],
-        ['BRAKE_MIN_SPEED', 'Min Speed', 0, 0.5, 0.01],
-    ]},
-    { title: 'Speed Recovery', params: [
-        ['SPEED_RECOVERY', 'Recovery Rate', 0.002, 0.05, 0.002],
-        ['SPEED_RECOVERY_RELEASE', 'Release Burst', 0.01, 0.2, 0.01],
-    ]},
-    { title: 'Track Shape', params: [
-        ['TRACK_WIDTH', 'Max Width', 60, 200, 5],
-        ['MIN_TRACK_WIDTH', 'Min Width', 20, 100, 5],
-        ['SEGMENT_LENGTH', 'Seg Length', 4, 30, 1],
-        ['LOOK_AHEAD', 'Look Ahead', 40, 250, 10],
-        ['LOOK_BEHIND', 'Look Behind', 30, 200, 10],
-        ['OVERLAP_MARGIN', 'Overlap Margin', 0, 40, 1],
-    ]},
-    { title: 'Agent Steering', params: [
-        ['WANDER_WEIGHT', 'Wander Weight', 0, 3, 0.05],
-        ['WANDER_FREQUENCY', 'Wander Freq', 0.01, 0.3, 0.005],
-        ['WANDER_AMPLITUDE', 'Wander Amp', 0.005, 0.2, 0.005],
-        ['AVOIDANCE_WEIGHT', 'Avoid Weight', 0, 8, 0.25],
-        ['AVOIDANCE_RADIUS', 'Avoid Radius', 100, 1200, 25],
-        ['RHYTHM_WEIGHT', 'Rhythm Weight', 0, 2, 0.05],
-        ['RHYTHM_FREQUENCY', 'Rhythm Freq', 0.02, 0.4, 0.01],
-        ['RHYTHM_AMPLITUDE', 'Rhythm Amp', 0.005, 0.15, 0.005],
-        ['EVENT_WEIGHT', 'Event Weight', 0, 4, 0.1],
-        ['EVENT_INTENSITY', 'Event Intensity', 0.02, 0.25, 0.005],
-        ['EVENT_DECAY', 'Event Decay', 0.7, 0.99, 0.01],
-        ['EVENT_INTERVAL_MIN', 'Event Min Gap', 5, 60, 1],
-        ['EVENT_INTERVAL_MAX', 'Event Max Gap', 20, 120, 5],
-        ['CENTERING_WEIGHT', 'Center Weight', 0, 0.5, 0.01],
-        ['WIDTH_CURVATURE_COUPLING', 'Width-Curv', 0, 1, 0.05],
-        ['WIDTH_TRANSITION_RATE', 'Width Smooth', 0.02, 0.5, 0.02],
-    ]},
-    { title: 'Agent Physics', params: [
-        ['AGENT_STEER_RATE', 'Steer Rate', 0.002, 0.03, 0.001],
-        ['AGENT_STEER_MAX', 'Steer Max', 0.01, 0.1, 0.002],
-        ['AGENT_GRIP', 'Grip', 0.005, 0.1, 0.005],
-    ]},
-    { title: 'Agent Offset', params: [
-        ['OFFSET_FREQUENCY', 'Offset Freq', 0.005, 0.1, 0.005],
-        ['OFFSET_AMPLITUDE', 'Offset Amp', 0, 1, 0.05],
-        ['AGENT_MARGIN', 'Agent Margin', 5, 50, 1],
-    ]},
-    { title: 'Difficulty', params: [
-        ['DIFFICULTY_RAMP', 'Ramp Speed', 0.00002, 0.0005, 0.00002],
-        ['METERS_PER_SEGMENT', 'Meters/Seg', 0.01, 0.1, 0.005],
-    ]},
-    { title: 'Timer / Tokens', params: [
-        ['START_TIME', 'Start Time (s)', 10, 120, 5],
-        ['TIME_TOKEN_VALUE', 'Token Value (s)', 0.5, 10, 0.5],
-        ['TOKEN_RADIUS', 'Token Radius', 5, 25, 1],
-        ['TOKEN_MIN_GAP', 'Min Gap (segs)', 5, 60, 1],
-        ['TOKEN_SPAWN_CHANCE', 'Spawn Chance', 0.005, 0.1, 0.005],
-        ['TOKEN_NO_SPAWN_ZONE', 'No-Spawn Zone', 10, 100, 5],
-    ]},
-    { title: 'Hazards', params: [
-        ['HAZARD_RADIUS', 'Radius', 5, 25, 1],
-        ['HAZARD_EFFECT_DUR', 'Effect Dur (f)', 60, 600, 30],
-        ['HAZARD_MIN_GAP', 'Min Gap (segs)', 3, 30, 1],
-        ['HAZARD_SPAWN_CHANCE', 'Spawn Chance', 0.005, 0.1, 0.005],
-        ['HAZARD_NO_SPAWN_ZONE', 'No-Spawn Zone', 20, 200, 10],
-        ['HAZARD_SLOW_MULT', 'Slow Mult', 0.2, 0.9, 0.05],
-        ['HAZARD_SPEED_MULT', 'Speed Mult', 1.02, 1.5, 0.02],
-    ]},
-];
-
-// current holds slider values (not yet applied); initialised from live CFG
-// (which already has any localStorage overrides baked in via the sync transform)
-let current = typeof CFG !== 'undefined' ? { ...CFG } : { ...DEFAULTS };
-let applied  = { ...current };
-let hasUnapplied = false;
-
-function buildUI() {
-    const container = document.getElementById('params');
-    container.innerHTML = '';
-    for (const section of PARAM_SECTIONS) {
-        const div = document.createElement('div');
-        div.className = 'section';
-        const title = document.createElement('div');
-        title.className = 'section-title';
-        title.textContent = section.title;
-        const body = document.createElement('div');
-        body.className = 'section-body';
-        title.addEventListener('click', () => {
-            body.style.display = body.style.display === 'none' ? '' : 'none';
-        });
-        div.appendChild(title);
-        for (const [key, label, min, max, step] of section.params) {
-            const row = document.createElement('div');
-            row.className = 'param-row';
-            const lbl = document.createElement('label');
-            lbl.textContent = label;
-            lbl.title = key;
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.min = min; slider.max = max; slider.step = step;
-            slider.value = current[key] !== undefined ? current[key] : DEFAULTS[key];
-            slider.id = 'slider-' + key;
-            const numInput = document.createElement('input');
-            numInput.type = 'number';
-            numInput.min = min; numInput.max = max; numInput.step = step;
-            numInput.value = slider.value;
-            numInput.id = 'num-' + key;
-            slider.addEventListener('input', () => {
-                const v = parseFloat(slider.value);
-                current[key] = v; numInput.value = v; markChanged();
-            });
-            numInput.addEventListener('change', () => {
-                const v = parseFloat(numInput.value);
-                if (!isNaN(v)) {
-                    current[key] = v;
-                    slider.value = Math.max(min, Math.min(max, v));
-                    markChanged();
-                }
-            });
-            row.appendChild(lbl); row.appendChild(slider); row.appendChild(numInput);
-            body.appendChild(row);
-        }
-        div.appendChild(body);
-        container.appendChild(div);
-    }
-}
-
-function markChanged() {
-    hasUnapplied = true;
-    document.getElementById('apply-btn').classList.add('changed');
-    autoSave();
-}
-
-function applyConfig() {
-    Object.assign(CFG, current);
-    autoSave();
-    _startGame();
-    applied = { ...current };
-    hasUnapplied = false;
-    document.getElementById('apply-btn').classList.remove('changed');
-    showStatus('Config applied — game restarted');
-    closePanel();
-}
-
-function autoSave() {
-    localStorage.setItem('driftArrowDevConfig', JSON.stringify(current));
-}
-
-function updateUIFromCurrent() {
-    for (const section of PARAM_SECTIONS) {
-        for (const [key, , min, max] of section.params) {
-            const slider   = document.getElementById('slider-' + key);
-            const numInput = document.getElementById('num-' + key);
-            if (slider)   slider.value   = Math.max(min, Math.min(max, current[key]));
-            if (numInput) numInput.value = current[key];
-        }
-    }
-}
-
-function exportConfig() {
-    const json = JSON.stringify(current, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = 'drift-config.json'; a.click();
-    URL.revokeObjectURL(url);
-    showStatus('Exported drift-config.json');
-}
-
-function importConfig() {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.json';
-    input.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            try {
-                const parsed = JSON.parse(reader.result);
-                for (const key of Object.keys(DEFAULTS)) {
-                    if (key in parsed) current[key] = parsed[key];
-                }
-                updateUIFromCurrent();
-                markChanged();
-                showStatus('Imported ' + file.name + ' — click Apply to use');
-            } catch (err) {
-                showStatus('Error: invalid JSON — ' + err.message);
-            }
-        };
-        reader.readAsText(file);
-    });
-    input.click();
-}
-
-function resetDefaults() {
-    current = { ...DEFAULTS };
-    updateUIFromCurrent();
-    markChanged();
-    showStatus('Reset to defaults — click Apply to use');
-}
-
-function showStatus(msg) {
-    const el = document.getElementById('status');
-    el.textContent = msg;
-    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
-}
-
-buildUI();
-</script>
-
+    </script>
 </body>
 </html>

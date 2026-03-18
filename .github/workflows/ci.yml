@@ -82,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check game file exists and is valid
+      - name: Check game files exist and are valid
         run: |
           # Ensure index.html exists and is non-empty
           if [ ! -s index.html ]; then
@@ -92,7 +92,23 @@ jobs:
 
           # Basic syntax check - ensure the HTML has required structure
           grep -q '<canvas' index.html || { echo "ERROR: No canvas element found"; exit 1; }
-          grep -q "'use strict'" index.html || { echo "ERROR: Missing 'use strict' directive"; exit 1; }
-          grep -q 'class Game' index.html || { echo "ERROR: Game class not found"; exit 1; }
+
+          # Check JS modules exist (refactored from monolithic index.html)
+          for f in js/config.js js/utils.js js/track.js js/arrow.js js/particles.js \
+                   js/tokens.js js/hazards.js js/input.js js/audio.js js/renderer.js \
+                   js/game.js js/bootstrap.js; do
+            if [ ! -s "$f" ]; then
+              echo "ERROR: $f is missing or empty"
+              exit 1
+            fi
+          done
+
+          grep -q "'use strict'" js/config.js || { echo "ERROR: Missing 'use strict' directive"; exit 1; }
+          grep -q 'class Game' js/game.js || { echo "ERROR: Game class not found"; exit 1; }
+
+          # Ensure mobile.html (single-file build) exists and contains inline game code
+          if [ -s mobile.html ]; then
+            grep -q 'class Game' mobile.html || { echo "ERROR: mobile.html missing Game class"; exit 1; }
+          fi
 
           echo "HTML validation passed"
