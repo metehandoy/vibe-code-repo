@@ -659,6 +659,7 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
                     angle: removed.angle,
                     width: removed.width + 40
                 };
+                this.startWall = null; // backWall now covers the rear; startWall no longer needed
                 this.minSegIdx = this.spine.length > 0 ? this.spine[0].index : removed.index;
             }
             // Generate ahead
