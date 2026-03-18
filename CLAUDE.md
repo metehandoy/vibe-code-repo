@@ -2,44 +2,59 @@
 
 ## Project Overview
 
-Drift Arrow is a neon synthwave endless drifting browser game. The player controls an arrow through a procedurally generated track, collecting time tokens, avoiding hazards, and surviving as long as possible. Built as a single self-contained HTML file with zero external dependencies.
+Drift Arrow is a neon synthwave endless drifting browser game. The player controls an arrow through a procedurally generated track, collecting time tokens, avoiding hazards, and surviving as long as possible. Game logic is split into modular JS files under `js/`, with a build script that merges them into a single `mobile.html` for zero-dependency mobile deployment.
 
 ## Repository Structure
-
-```
 /
-├── index.html        # Complete game — all code, styles, and logic (~2000 lines)
-├── dev.html          # Dev tuner — full game embedded + fixed overlay panel
+├── index.html              # Game shell — loads JS modules via  tags
+├── mobile.html             # Single-file build (auto-generated, works offline)
+├── dev.html                # Dev tuner — game embedded + overlay panel
+├── js/
+│   ├── config.js           # CFG parameters + URL hash override logic
+│   ├── utils.js            # lerp, clamp, dist, noise, angle helpers
+│   ├── track.js            # Procedural track generation (Track class)
+│   ├── arrow.js            # Player controller (Arrow class)
+│   ├── particles.js        # Particle effects (Particles class)
+│   ├── tokens.js           # Time tokens (TimeTokenManager) + HAZARD enum + CFG defaults
+│   ├── hazards.js          # Road hazards (HazardManager class)
+│   ├── input.js            # Keyboard/mouse/touch input (InputManager class)
+│   ├── audio.js            # Synthesized audio (GameAudio class)
+│   ├── renderer.js         # Canvas 2D rendering (GameRenderer class)
+│   ├── game.js             # Main loop + state machine (Game class + STATE enum)
+│   └── bootstrap.js        # Canvas init, exposes CFG, starts Game
+├── tests/
+│   └── collision-tests.html  # Headless collision/geometry tests (imports js/ modules)
 ├── scripts/
-│   └── sync-dev.py   # Copies game code from index.html into dev.html
-├── README.md         # Player-facing documentation
-└── CLAUDE.md         # This file
-```
+│   ├── sync-dev.py         # Concatenates js/.js into dev.html with patches
+│   └── build-mobile.py     # Merges js/.js into single mobile.html
+├── .github/workflows/
+│   └── ci.yml              # CI: collision tests + file validation
+├── README.md               # Player-facing documentation
+└── CLAUDE.md               # This file
+There is no build system, no package manager, no bundler. The game runs by opening `index.html` via a local server (needed for `<script src>` loading), or by opening `mobile.html` directly in a browser (works with `file://`).
 
-There is no build system, no package manager, no bundler, and no test framework. The game runs by opening `index.html` directly in a browser (works with both `file://` and `http://`).
+## Architecture
 
-## Architecture (index.html)
+Game code lives in 12 JS files under `js/`, loaded by `index.html` in order via `<script>` tags. All files share the global scope (`'use strict'` mode per file).
 
-The entire game is a single `<script>` block using `'use strict'` mode with class-based organization:
-
-| Section | Description |
-|---------|-------------|
-| `CFG` | Tunable game parameters (plain object, mutated directly by dev.html) |
-| Utils | `lerp`, `clamp`, `dist`, `distPointToSeg`, `distToArrowWings` helpers |
-| `Track` | Procedural track generation via agent-based steering with 6 behavioral forces (wander, rhythm, events, avoidance, centering, offset). Generates new segments ahead, trims old ones behind, maintains a single `backWall` barrier at the cut point |
-| `Arrow` | Player controller — drift physics, steering velocity, speed multipliers, wall collision, drift trails. `update(inputDir, dt60, braking, maxSpeed, boostActive)` — `maxSpeed` caps recovery (used by hazard slow), `boostActive` halves grip for extra sliding |
-| `Particles` | Visual particle effect system |
-| `TimeTokenManager` | Spawns and manages time-bonus tokens |
-| `HazardManager` | Spawns slow/speed/death tokens. `getSpeedMult()` returns the active multiplier (0.55 slow, 1.35 speed, 1 neutral) |
-| `InputManager` | Keyboard, mouse, and touch input |
-| `GameAudio` | Synthesized audio via Web Audio API (no audio files) |
-| `GameRenderer` | Canvas 2D rendering — track, arrow, particles, HUD, glow effects |
-| `Game` | Main game loop, state machine (MENU / COUNTDOWN / PLAYING / GAME_OVER), physics integration |
-| Bootstrap | Creates canvas, instantiates and starts `Game` |
+| File | Contents |
+|------|----------|
+| `config.js` | `CFG` object — tunable game parameters (mutated directly by dev.html) |
+| `utils.js` | `lerp`, `clamp`, `dist`, `distPointToSeg`, `distToArrowWings`, `valueNoise`, `normalizeAngle`, `angleDiff` |
+| `track.js` | `Track` class — procedural track generation via agent-based steering with 6 behavioral forces (wander, rhythm, events, avoidance, centering, offset). Generates new segments ahead, trims old ones behind, maintains a single `backWall` barrier at the cut point |
+| `arrow.js` | `Arrow` class — drift physics, steering velocity, speed multipliers, wall collision, drift trails. `update(inputDir, dt60, braking, maxSpeed, boostActive)` — `maxSpeed` caps recovery (used by hazard slow), `boostActive` halves grip for extra sliding |
+| `particles.js` | `Particles` class — visual particle effect system |
+| `tokens.js` | `TimeTokenManager` class + `HAZARD` enum + runtime CFG defaults for hazard/token tuning |
+| `hazards.js` | `HazardManager` class — spawns slow/speed/death tokens. `getSpeedMult()` returns the active multiplier (0.55 slow, 1.35 speed, 1 neutral) |
+| `input.js` | `InputManager` class — keyboard, mouse, and touch input |
+| `audio.js` | `GameAudio` class — synthesized audio via Web Audio API (no audio files) |
+| `renderer.js` | `GameRenderer` class — Canvas 2D rendering: track, arrow, particles, HUD, glow effects |
+| `game.js` | `Game` class + `STATE` enum — main game loop, state machine (MENU / COUNTDOWN / PLAYING / GAME_OVER), physics integration |
+| `bootstrap.js` | Creates canvas, exposes `CFG` on `window`, instantiates and starts `Game` |
 
 ## Configuration System
 
-Game parameters are defined in the `CFG` object at the top of `index.html`. In `index.html` the object is a plain const — no URL hash overrides. In `dev.html` the same object is patched at load time with any saved `localStorage` values, and the dev panel mutates it directly on Apply.
+Game parameters are defined in the `CFG` object in `js/config.js`. In `index.html` the object supports URL hash overrides. In `dev.html` the same object is patched at load time with any saved `localStorage` values, and the dev panel mutates it directly on Apply.
 
 Key parameter groups:
 - **Arrow/Driving**: `ARROW_SPEED`, `STEER_RATE`, `STEER_MAX`, `GRIP`, `REALIGN_RATE`, `DRIFT_DRAG_EXP`, `DRIFT_DRAG_SCALE`, `ARROW_LENGTH`, `ARROW_WIDTH`
@@ -55,7 +70,7 @@ Key parameter groups:
 ## Development Workflow
 
 ### Running the Game
-Open `index.html` in any modern browser. No server required.
+Open `index.html` via a local server (`npx serve .`, Python `http.server`, etc.) or open `mobile.html` directly in any browser.
 
 ### Tuning Parameters
 Open `dev.html`. The game runs full-screen; the dev panel is a fixed overlay:
@@ -64,18 +79,18 @@ Open `dev.html`. The game runs full-screen; the dev panel is a fixed overlay:
 
 Hit **Apply + Restart** to write slider values into `CFG` and restart the game. Settings persist to `localStorage`.
 
-### Making Changes to index.html
-All game logic lives in `index.html`. Edit it, refresh the browser.
+### Making Changes
+Edit the JS files in `js/`. Refresh the browser to see changes.
 
-After committing, `dev.html` is kept in sync automatically — a **pre-commit hook** (`.git/hooks/pre-commit`) runs `scripts/sync-dev.py` whenever `index.html` is staged, updates `dev.html`, and stages it into the same commit.
+After committing:
+- **Pre-commit hook** runs `scripts/sync-dev.py` to update `dev.html` from `js/*.js` and stages it
+- **Post-commit hook** runs `scripts/build-mobile.py` to regenerate `mobile.html`
 
-To sync manually without committing:
-```
+To run manually without committing:
 python3 scripts/sync-dev.py
-```
-
+python3 scripts/build-mobile.py
 ### How sync-dev.py Works
-It extracts the `<script>` block from `index.html`, applies four patches, and replaces the content between marker comments in `dev.html`:
+It reads all JS files from `js/` in load order, concatenates them, applies four patches, and replaces the content between marker comments in `dev.html`:
 
 1. Strips the URL-hash CFG init → plain `const CFG = { … }`
 2. Injects a `localStorage` overlay after the CFG closing `};`
@@ -83,19 +98,22 @@ It extracts the `<script>` block from `index.html`, applies four patches, and re
 4. Replaces the one-shot bootstrap with a restartable `_startGame()` helper
 
 The markers in `dev.html` that delimit the game code section:
-```
 // === GAME CODE BEGIN (auto-synced from index.html) ===
 // === GAME CODE END ===
-```
+### How build-mobile.py Works
+It reads `index.html` for the HTML shell, reads all `js/*.js` files in order, strips per-file `'use strict'` directives, and combines everything into a single `mobile.html` with one inline `<script>` block. This file has zero external dependencies and works with `file://`.
+
+### Running Tests
+Tests are in `tests/collision-tests.html`. They import `js/config.js`, `js/utils.js`, and `js/tokens.js` directly and test collision geometry, token collection, hazard detection, and wall hits. CI runs them headlessly via Puppeteer.
 
 ## Key Conventions
 
 ### Code Style
 - Vanilla JavaScript ES6+ (classes, const/let, arrow functions, template literals)
 - No TypeScript, no transpilation
-- `'use strict'` mode
+- `'use strict'` mode per file
 - Section headers use `// ============` comment blocks
-- Classes are self-contained with clear responsibilities
+- One class per file, files named after their primary export
 - No external dependencies whatsoever
 
 ### Rendering
@@ -129,22 +147,26 @@ The markers in `dev.html` that delimit the game code section:
 
 ## Important Notes for AI Assistants
 
-1. **Single-file architecture**: All game code is in `index.html`. Do not create separate `.js` files unless explicitly asked — the monolithic design is intentional for zero-dependency deployment.
+1. **Modular JS files**: Game code lives in `js/*.js`. Each file is one logical unit (one class or set of related functions). Files share the global scope and are loaded in dependency order by `index.html`.
 
-2. **Sync dev.html after editing index.html**: Run `python3 scripts/sync-dev.py` or just commit with `index.html` staged — the pre-commit hook does it automatically.
+2. **mobile.html is auto-generated**: Never edit `mobile.html` directly — it is rebuilt by `scripts/build-mobile.py` on every commit via the post-commit hook.
 
-3. **No build step**: Changes to `index.html` take effect immediately on browser refresh.
+3. **Sync dev.html after editing JS files**: Run `python3 scripts/sync-dev.py` or just commit — the pre-commit hook does it automatically.
 
-4. **No tests**: Verify changes by playing the game in a browser. Use `dev.html` for parameter tuning.
+4. **No build step for development**: Changes to `js/*.js` take effect immediately on browser refresh (when using a local server).
 
-5. **Performance matters**: This is a 60fps game loop. Avoid allocations in hot paths (`update` and `render` methods). Reuse objects where possible.
+5. **Tests exist**: Run `tests/collision-tests.html` in a browser or via CI. Tests import game modules directly — keep test values in sync with `js/config.js`.
 
-6. **Mobile-first**: Touch input is the primary control method. Always verify changes work on mobile viewports.
+6. **Performance matters**: This is a 60fps game loop. Avoid allocations in hot paths (`update` and `render` methods). Reuse objects where possible.
 
-7. **Config changes**: Prefer adjusting `CFG` values over changing physics code when tuning game feel.
+7. **Mobile-first**: Touch input is the primary control method. Always verify changes work on mobile viewports. Use `mobile.html` for testing on actual devices.
 
-8. **Track generation**: The `Track` class generates segments on-the-fly using agent steering. Small changes to the agent forces or noise parameters can dramatically alter track shape — test thoroughly. Do not change `agentWanderPhase` / `agentRhythmPhase` init without ensuring they remain randomised.
+8. **Config changes**: Prefer adjusting `CFG` values over changing physics code when tuning game feel.
 
-9. **Hazard speed system**: `Arrow.update()` takes `maxSpeed` and `boostActive` from the active hazard multiplier. Any new speed effects must go through this interface to interact correctly with drift recovery.
+9. **Track generation**: The `Track` class generates segments on-the-fly using agent steering. Small changes to the agent forces or noise parameters can dramatically alter track shape — test thoroughly. Do not change `agentWanderPhase` / `agentRhythmPhase` init without ensuring they remain randomised.
 
-10. **backWall**: There is only one rear barrier — `track.backWall`. It is set at game start (first spine segment) and updated as segments are trimmed. Do not reintroduce a separate `startWall`.
+10. **Hazard speed system**: `Arrow.update()` takes `maxSpeed` and `boostActive` from the active hazard multiplier. Any new speed effects must go through this interface to interact correctly with drift recovery.
+
+11. **backWall**: There is only one rear barrier — `track.backWall`. It is set at game start (first spine segment) and updated as segments are trimmed. Do not reintroduce a separate `startWall`.
+
+12. **Script load order matters**: `index.html` loads JS files in a specific order (config → utils → track → arrow → particles → tokens → hazards → input → audio → renderer → game → bootstrap). New files must be added to this order in `index.html`, `scripts/sync-dev.py`, and `scripts/build-mobile.py`.
