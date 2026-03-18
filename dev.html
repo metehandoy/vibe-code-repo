@@ -96,6 +96,11 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
     font-size: 12px;
     color: #ccc;
 }
+/* Allow vertical touch-scroll inside the panel despite touch-action:none on body */
+#dev-panel, #dev-panel-body {
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
 #dev-panel-body::-webkit-scrollbar { width: 5px; }
 #dev-panel-body::-webkit-scrollbar-track { background: transparent; }
 #dev-panel-body::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
