@@ -223,6 +223,32 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
     margin-top: auto;
     line-height: 1.6;
 }
+
+/* Scroll buttons — sticky footer inside the panel */
+#dev-scroll-btns {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    border-top: 1px solid #2a1a3a;
+    flex-shrink: 0;
+    background: rgba(12, 5, 22, 0.97);
+}
+.scroll-btn {
+    flex: 1;
+    padding: 10px 4px;
+    background: #1a0e2a;
+    color: #aaa;
+    border: 1px solid #333;
+    border-radius: 3px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    font-family: inherit;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.scroll-btn:active { background: #2a1a3a; color: #fff; border-color: #ff00ff; }
 </style>
 </head>
 <body>
@@ -252,6 +278,10 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
             Touch left/right edge: steer<br>
             Slider changes take effect on Apply.
         </div>
+    </div>
+    <div id="dev-scroll-btns">
+        <button class="scroll-btn" id="scroll-up-btn">▲</button>
+        <button class="scroll-btn" id="scroll-dn-btn">▼</button>
     </div>
 </div>
 
@@ -2249,6 +2279,30 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
 // ============================================================
 // DEV PANEL
 // ============================================================
+
+// ---- Scroll buttons ----
+(function () {
+    const STEP = 120, INTERVAL = 60;
+    let _timer = null;
+
+    function startScroll(dir) {
+        const body = document.getElementById('dev-panel-body');
+        body.scrollTop += dir * STEP;
+        _timer = setInterval(() => { body.scrollTop += dir * STEP; }, INTERVAL);
+    }
+    function stopScroll() { clearInterval(_timer); _timer = null; }
+
+    ['up', 'dn'].forEach((id, i) => {
+        const dir = i === 0 ? -1 : 1;
+        const btn = document.getElementById('scroll-' + id + '-btn');
+        btn.addEventListener('mousedown',  () => startScroll(dir));
+        btn.addEventListener('touchstart', () => startScroll(dir), { passive: true });
+        btn.addEventListener('mouseup',   stopScroll);
+        btn.addEventListener('mouseleave', stopScroll);
+        btn.addEventListener('touchend',  stopScroll);
+        btn.addEventListener('touchcancel', stopScroll);
+    });
+}());
 
 function togglePanel() {
     const panel = document.getElementById('dev-panel');
