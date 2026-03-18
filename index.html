@@ -470,7 +470,7 @@
             this._driftBrakeDelay = 150;   // ms required to confirm drift+brake
         }
 
-        update(inputDir, dt60, braking) {
+        update(inputDir, dt60, braking, maxSpeed = 1, boostActive = false) {
             // inputDir: -1 = left, 0 = none, +1 = right
             // Direct controls: tap left = turn left, tap right = turn right
 
@@ -523,8 +523,10 @@
 
             // Movement: velocity direction slowly catches up to facing direction
             // This is the core drift mechanic — low GRIP = more sliding
+            // During speed boost, grip is halved so the arrow slides more
             const diff = angleDiff(this.moveAngle, this.facing);
-            const gripDelta = diff * CFG.GRIP * dt60;
+            const effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
+            const gripDelta = diff * effectiveGrip * dt60;
             this.moveAngle += gripDelta;
             if (driftBraking) {
                 // Rotate facing by the same amount so the drift angle stays stable
@@ -558,8 +560,8 @@
                 } else {
                     recoveryRate = CFG.SPEED_RECOVERY * 0.3;
                 }
-                if (this.speedMult < 1) {
-                    this.speedMult = Math.min(1, this.speedMult + recoveryRate * dt60);
+                if (this.speedMult < maxSpeed) {
+                    this.speedMult = Math.min(maxSpeed, this.speedMult + recoveryRate * dt60);
                 }
             }
 
@@ -1747,7 +1749,8 @@
         updatePlaying(dt60) {
             const dir = this.input.getDir();
             const braking = this.input.isBraking();
-            this.arrow.update(dir, dt60, braking);
+            const _hazardMult = this.hazards.getSpeedMult();
+            this.arrow.update(dir, dt60, braking, _hazardMult, _hazardMult > 1);
 
             // Braking: both sides pressed slows down gradually to near-stop
             if (braking) {
