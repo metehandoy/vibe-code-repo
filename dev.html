@@ -28,6 +28,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    flex-shrink: 0;
 }
 
 #panel::-webkit-scrollbar { width: 6px; }
@@ -48,12 +49,67 @@ body {
 #game-container {
     flex: 1;
     position: relative;
+    min-width: 0;
+    min-height: 0;
 }
 
 #game-container iframe {
     width: 100%;
     height: 100%;
     border: none;
+}
+
+/* ---- Mobile: vertical stack ---- */
+@media (max-width: 768px) {
+    body { flex-direction: column; }
+
+    #game-container { order: 1; flex: 1; }
+
+    #resize-handle {
+        order: 2;
+        width: 100%;
+        height: 10px;
+        cursor: row-resize;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    /* Pill drag indicator */
+    #resize-handle::after {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 4px;
+        background: #444;
+        border-radius: 2px;
+    }
+
+    #panel {
+        order: 3;
+        width: 100%;
+        height: 40vh;
+        min-height: 44px;
+        max-height: 85vh;
+        border-right: none;
+        border-top: 1px solid #333;
+        transition: height 0.2s ease;
+    }
+
+    /* Collapse toggle button — only visible on mobile */
+    #panel-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        padding: 2px 0 6px;
+        flex-shrink: 0;
+    }
+    #panel-toggle-arrow { font-size: 14px; color: #ff00ff; }
+
+    /* Hide scrollbar on panel when collapsed */
+    #panel.collapsed { height: 44px; overflow: hidden; }
+    #panel.collapsed #params { display: none; }
+    #panel.collapsed .controls-hint { display: none; }
 }
 
 h2 {
@@ -182,7 +238,12 @@ h2 {
 <body>
 
 <div id="panel">
-    <h2>DRIFT ARROW DEV</h2>
+    <!-- Mobile collapse toggle (hidden on desktop via CSS) -->
+    <div id="panel-toggle" onclick="togglePanel()" style="display:none">
+        <h2 style="margin:0">DRIFT ARROW DEV</h2>
+        <span id="panel-toggle-arrow">▼</span>
+    </div>
+    <h2 id="panel-title">DRIFT ARROW DEV</h2>
 
     <div class="btn-row">
         <button class="btn apply" id="apply-btn" onclick="applyConfig()">APPLY CHANGES</button>
@@ -580,17 +641,42 @@ const handle = document.getElementById('resize-handle');
 const panel = document.getElementById('panel');
 let resizing = false;
 
+function isMobile() { return window.innerWidth <= 768; }
+
+// Show/hide mobile toggle button based on viewport
+function updateMobileUI() {
+    const toggle = document.getElementById('panel-toggle');
+    const title  = document.getElementById('panel-title');
+    if (isMobile()) {
+        toggle.style.display = 'flex';
+        title.style.display  = 'none';
+    } else {
+        toggle.style.display = 'none';
+        title.style.display  = '';
+        panel.classList.remove('collapsed');
+    }
+}
+updateMobileUI();
+window.addEventListener('resize', updateMobileUI);
+
+function togglePanel() {
+    const arrow = document.getElementById('panel-toggle-arrow');
+    panel.classList.toggle('collapsed');
+    arrow.textContent = panel.classList.contains('collapsed') ? '▲' : '▼';
+}
+
+// ---- Desktop: horizontal drag ----
 handle.addEventListener('mousedown', (e) => {
+    if (isMobile()) return;
     e.preventDefault();
     resizing = true;
     handle.classList.add('active');
     document.body.style.cursor = 'col-resize';
-    // Prevent iframe from capturing mouse during resize
     document.getElementById('game-frame').style.pointerEvents = 'none';
 });
 
 document.addEventListener('mousemove', (e) => {
-    if (!resizing) return;
+    if (!resizing || isMobile()) return;
     const newWidth = Math.max(200, Math.min(600, e.clientX));
     panel.style.width = newWidth + 'px';
 });
@@ -601,6 +687,38 @@ document.addEventListener('mouseup', () => {
     handle.classList.remove('active');
     document.body.style.cursor = '';
     document.getElementById('game-frame').style.pointerEvents = '';
+});
+
+// ---- Mobile: vertical drag ----
+let touchStartY = 0;
+let touchStartH = 0;
+
+handle.addEventListener('touchstart', (e) => {
+    if (!isMobile()) return;
+    panel.classList.remove('collapsed');
+    touchStartY = e.touches[0].clientY;
+    touchStartH = panel.offsetHeight;
+    handle.classList.add('active');
+    document.getElementById('game-frame').style.pointerEvents = 'none';
+}, { passive: true });
+
+handle.addEventListener('touchmove', (e) => {
+    if (!isMobile()) return;
+    e.preventDefault();
+    const dy = touchStartY - e.touches[0].clientY; // drag up = grow panel
+    const newH = Math.max(44, Math.min(window.innerHeight * 0.85, touchStartH + dy));
+    panel.style.height = newH + 'px';
+    document.getElementById('panel-toggle-arrow').textContent = newH < 80 ? '▲' : '▼';
+}, { passive: false });
+
+handle.addEventListener('touchend', () => {
+    handle.classList.remove('active');
+    document.getElementById('game-frame').style.pointerEvents = '';
+    // Snap to collapsed if dragged very small
+    if (panel.offsetHeight < 80) {
+        panel.classList.add('collapsed');
+        panel.style.height = '';
+    }
 });
 
 // ============================================================
