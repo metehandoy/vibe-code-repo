@@ -1,25 +1,37 @@
 # Drift Arrow
 
-A neon synthwave endless drifting game. Control an arrow drifting through a procedurally generated track.
+A neon synthwave endless drifting game. Control an arrow through a procedurally generated track, collect time tokens, dodge hazards, and survive as long as possible.
 
 ## How to Play
 
-1. Open `index.html` in a browser
-2. **Tap left side** of screen to drift left, **right side** to drift right
+1. Open `index.html` in a browser — no server required
+2. **Tap left side** of screen to steer left, **right side** to steer right
 3. Hold longer for tighter drifts
-4. Avoid walls — hitting them slows you down and breaks your combo
-5. Build combos by passing segments cleanly for score multipliers
+4. Collect **green tokens** to add time
+5. Hit **orange tokens** for a speed boost (more sliding, faster)
+6. Avoid **red tokens** — they slow you down
+7. Don't hit the walls or go backwards
 
 ## Controls
 
-- **Mobile**: Tap/hold left or right side of screen
-- **Desktop**: Arrow keys or A/D, mouse click left/right side
+| Action | Mobile | Desktop |
+|--------|--------|---------|
+| Steer left/right | Tap/hold left or right side | A/D or ← → arrow keys |
+| Brake / drift-brake | Hold both sides | Space or ↓ |
 
 ## Features
 
-- Procedural track generation with increasing difficulty
+- Procedural track generation — every run is a different path
+- Difficulty ramps up over time: narrower track, more hazards
+- Three hazard types: slow (red), speed boost (orange), instant death (white)
+- Time token pickups extend your run
 - Neon synthwave visuals with glow effects and drift trails
-- Wall collision with bounce-back physics
-- Combo scoring system
-- Synthesized audio effects
+- Synthesized audio — no audio files
 - High score persistence
+
+## Dev Tool
+
+Open `dev.html` in a browser for a live parameter tuner. The game runs
+full-screen with a slide-in panel (desktop: left edge, mobile: bottom sheet)
+giving sliders for every `CFG` value. Hit **Apply + Restart** to reload the
+game with your changes. Settings are saved to `localStorage`.

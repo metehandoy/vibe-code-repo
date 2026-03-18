@@ -2,78 +2,171 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drift Arrow - Dev Tuner</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Drift Arrow — Dev</title>
 <style>
+/* ---- Game canvas (fills whole screen) ---- */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-    background: #0a0014;
-    color: #ccc;
-    font-family: 'Consolas', 'Monaco', monospace;
-    font-size: 12px;
-    display: flex;
-    height: 100vh;
-    overflow: hidden;
+html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0a0014; touch-action: none;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
 }
+canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; left: 0; }
 
-#panel {
-    width: 320px;
-    min-width: 200px;
-    max-width: 600px;
-    height: 100vh;
+/* ---- Dev toggle button (always visible) ---- */
+#dev-toggle-btn {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 1000;
+    background: rgba(18, 8, 30, 0.85);
+    color: #ff00ff;
+    border: 1px solid #ff00ff55;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    text-shadow: 0 0 6px #ff00ff;
+    box-shadow: 0 0 10px #ff00ff33;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+}
+#dev-toggle-btn:hover { background: rgba(40, 10, 60, 0.95); border-color: #ff00ff; }
+
+/* ---- Dev panel overlay ---- */
+#dev-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 310px;
+    z-index: 999;
+    background: rgba(12, 5, 22, 0.97);
+    border-right: 1px solid #2a1a3a;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+#dev-panel.open { transform: translateX(0); }
+
+#dev-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 10px 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #2a1a3a;
+}
+#dev-panel-header h2 {
+    color: #ff00ff;
+    font-size: 14px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    text-shadow: 0 0 8px #ff00ff;
+    margin: 0;
+}
+#dev-panel-close {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    font-family: inherit;
+}
+#dev-panel-close:hover { color: #fff; }
+
+#dev-panel-body {
+    flex: 1;
     overflow-y: auto;
-    background: #12081e;
-    border-right: 1px solid #333;
     padding: 8px;
     display: flex;
     flex-direction: column;
     gap: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: #ccc;
+}
+/* Allow vertical touch-scroll inside the panel despite touch-action:none on body */
+#dev-panel, #dev-panel-body {
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
+#dev-panel-body::-webkit-scrollbar { width: 5px; }
+#dev-panel-body::-webkit-scrollbar-track { background: transparent; }
+#dev-panel-body::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+/* Mobile: slide up from bottom */
+@media (max-width: 768px) {
+    #dev-panel {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        height: 65vh;
+        border-right: none;
+        border-top: 1px solid #2a1a3a;
+        transform: translateY(100%);
+    }
+    #dev-panel.open { transform: translateY(0); }
+    #dev-toggle-btn { top: auto; bottom: 16px; right: 16px; font-size: 12px; padding: 8px 14px; }
 }
 
-#panel::-webkit-scrollbar { width: 6px; }
-#panel::-webkit-scrollbar-track { background: #12081e; }
-#panel::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
-
-#resize-handle {
-    width: 6px;
-    cursor: col-resize;
-    background: #222;
-    flex-shrink: 0;
-    transition: background 0.15s;
+/* ---- Panel UI components ---- */
+.btn-row {
+    display: flex;
+    gap: 4px;
+    margin: 2px 0;
 }
-#resize-handle:hover, #resize-handle.active {
-    background: #ff00ff;
-}
-
-#game-container {
+.btn {
     flex: 1;
-    position: relative;
+    padding: 6px 4px;
+    background: #1a0e2a;
+    color: #fff;
+    border: 1px solid #333;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    touch-action: manipulation;
 }
+.btn:hover { background: #2a1a3a; }
+.btn.apply { border-color: #ff00ff; color: #ff00ff; font-size: 12px; padding: 8px 4px; }
+.btn.apply:hover { background: #3a1a4a; box-shadow: 0 0 8px #ff00ff44; }
+.btn.export { border-color: #00ffa0; color: #00ffa0; }
+.btn.import { border-color: #4488ff; color: #4488ff; }
+.btn.reset  { border-color: #ff3366; color: #ff3366; }
+.changed { border-color: #ff00ff !important; box-shadow: 0 0 6px #ff00ff55; }
 
-#game-container iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-}
-
-h2 {
-    color: #ff00ff;
-    font-size: 16px;
-    margin: 0 0 6px 0;
-    text-shadow: 0 0 10px #ff00ff;
+#status {
+    padding: 3px 2px;
+    font-size: 10px;
+    color: #00ffa0;
+    min-height: 16px;
 }
 
 .section {
-    background: #1a0e2a;
-    border: 1px solid #2a1a3a;
+    background: #150a22;
+    border: 1px solid #221533;
     border-radius: 4px;
     padding: 6px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
 }
-
 .section-title {
     color: #00ffff;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
     margin-bottom: 4px;
     text-transform: uppercase;
@@ -81,7 +174,6 @@ h2 {
     cursor: pointer;
     user-select: none;
 }
-
 .section-title:hover { color: #66ffff; }
 
 .param-row {
@@ -90,16 +182,14 @@ h2 {
     margin: 2px 0;
     gap: 4px;
 }
-
 .param-row label {
-    flex: 0 0 100px;
+    flex: 0 0 96px;
     font-size: 10px;
-    color: #aaa;
-    text-overflow: ellipsis;
+    color: #999;
     overflow: hidden;
     white-space: nowrap;
+    text-overflow: ellipsis;
 }
-
 .param-row input[type="range"] {
     flex: 1;
     height: 14px;
@@ -107,10 +197,9 @@ h2 {
     cursor: pointer;
     min-width: 40px;
 }
-
 .param-row input[type="number"] {
-    width: 58px;
-    flex: 0 0 58px;
+    width: 56px;
+    flex: 0 0 56px;
     background: #0a0014;
     border: 1px solid #333;
     border-radius: 2px;
@@ -121,96 +210,2079 @@ h2 {
     padding: 2px 4px;
     text-align: right;
 }
-.param-row input[type="number"]:focus {
-    border-color: #ff00ff;
-    outline: none;
-}
-/* Hide number spinners */
+.param-row input[type="number"]:focus { border-color: #ff00ff; outline: none; }
 .param-row input[type="number"]::-webkit-inner-spin-button,
-.param-row input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
+.param-row input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .param-row input[type="number"] { -moz-appearance: textfield; }
 
-.btn-row {
+.controls-hint {
+    color: #555;
+    font-size: 10px;
+    padding: 6px 2px 2px;
+    border-top: 1px solid #1a1a2a;
+    margin-top: auto;
+    line-height: 1.6;
+}
+
+/* Scroll buttons — sticky footer inside the panel */
+#dev-scroll-btns {
     display: flex;
     gap: 4px;
-    margin: 4px 0;
+    padding: 6px 8px;
+    border-top: 1px solid #2a1a3a;
+    flex-shrink: 0;
+    background: rgba(12, 5, 22, 0.97);
 }
-
-.btn {
+.scroll-btn {
     flex: 1;
-    padding: 6px 4px;
-    background: #2a1a4a;
-    color: #fff;
-    border: 1px solid #444;
+    padding: 10px 4px;
+    background: #1a0e2a;
+    color: #aaa;
+    border: 1px solid #333;
     border-radius: 3px;
+    font-size: 16px;
+    line-height: 1;
     cursor: pointer;
     font-family: inherit;
-    font-size: 10px;
-    font-weight: bold;
-    text-transform: uppercase;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
 }
-
-.btn:hover { background: #3a2a5a; }
-.btn.apply { border-color: #ff00ff; color: #ff00ff; font-size: 12px; }
-.btn.apply:hover { background: #4a2a6a; box-shadow: 0 0 8px #ff00ff44; }
-.btn.export { border-color: #00ffa0; color: #00ffa0; }
-.btn.import { border-color: #4488ff; color: #4488ff; }
-.btn.reset { border-color: #ff3366; color: #ff3366; }
-.btn.load { border-color: #ffaa00; color: #ffaa00; }
-
-.changed { border-color: #ff00ff !important; }
-
-#status {
-    padding: 4px;
-    font-size: 10px;
-    color: #00ffa0;
-    min-height: 18px;
-}
-
-.controls-hint {
-    color: #666;
-    font-size: 10px;
-    padding: 4px;
-    border-top: 1px solid #222;
-    margin-top: auto;
-}
+.scroll-btn:active { background: #2a1a3a; color: #fff; border-color: #ff00ff; }
 </style>
 </head>
 <body>
 
-<div id="panel">
-    <h2>DRIFT ARROW DEV</h2>
+<canvas id="game"></canvas>
 
-    <div class="btn-row">
-        <button class="btn apply" id="apply-btn" onclick="applyConfig()">APPLY CHANGES</button>
+<button id="dev-toggle-btn" onclick="togglePanel()">DEV ▶</button>
+
+<div id="dev-panel">
+    <div id="dev-panel-header">
+        <h2>DRIFT ARROW DEV</h2>
+        <button id="dev-panel-close" onclick="closePanel()">✕</button>
     </div>
-    <div class="btn-row">
-        <button class="btn export" onclick="exportConfig()">Export</button>
-        <button class="btn import" onclick="importConfig()">Import</button>
-        <button class="btn reset" onclick="resetDefaults()">Reset</button>
+    <div id="dev-panel-body">
+        <div class="btn-row">
+            <button class="btn apply" id="apply-btn" onclick="applyConfig()">APPLY + RESTART</button>
+        </div>
+        <div class="btn-row">
+            <button class="btn export" onclick="exportConfig()">Export</button>
+            <button class="btn import" onclick="importConfig()">Import</button>
+            <button class="btn reset"  onclick="resetDefaults()">Reset</button>
+        </div>
+        <div id="status"></div>
+        <div id="params"></div>
+        <div class="controls-hint">
+            A/D or &lt;&gt; arrows: steer &nbsp;|&nbsp; Space: brake<br>
+            Touch left/right edge: steer<br>
+            Slider changes take effect on Apply.
+        </div>
     </div>
-    <div id="status"></div>
-
-    <div id="params"></div>
-
-    <div class="controls-hint">
-        Click game area for keyboard input<br>
-        A/D or Arrows: steer | Space: brake<br>
-        Drag edge to resize panel
+    <div id="dev-scroll-btns">
+        <button class="scroll-btn" id="scroll-up-btn">▲</button>
+        <button class="scroll-btn" id="scroll-dn-btn">▼</button>
     </div>
-</div>
-
-<div id="resize-handle"></div>
-
-<div id="game-container">
-    <iframe id="game-frame" src="index.html"></iframe>
 </div>
 
 <script>
-// Default values — must match index.html exactly
+'use strict';
+// === GAME CODE BEGIN (auto-synced from index.html) ===
+    'use strict';
+
+    // ============================================================
+    // CONFIG
+    // ============================================================
+    const CFG = {
+        ARROW_SPEED: 3.5,
+        STEER_RATE: 0.014,          // slightly slower rotation for less dizziness
+        STEER_MAX: 0.045,           // lower cap to prevent extreme spinning
+        GRIP: 0.025,
+        REALIGN_RATE: 0.04,
+        DRIFT_DRAG_EXP: 2.0,
+        DRIFT_DRAG_SCALE: 0.008,
+        ARROW_LENGTH: 22,
+        ARROW_WIDTH: 10,
+        TRACK_WIDTH: 140,
+        MIN_TRACK_WIDTH: 38,
+        BRAKE_DECEL: 0.02,
+        BRAKE_MIN_SPEED: 0.05,
+        SEGMENT_LENGTH: 12,
+        LOOK_AHEAD: 120,
+        LOOK_BEHIND: 100,
+        SPEED_RECOVERY: 0.012,
+        SPEED_RECOVERY_RELEASE: 0.06,
+        DIFFICULTY_RAMP: 0.00012,
+        METERS_PER_SEGMENT: 0.03,   // 1/100 scale — arrow ≈10cm, km takes very long
+        OVERLAP_MARGIN: 15,
+        // Agent steering
+        WANDER_WEIGHT: 1.0,
+        WANDER_FREQUENCY: 0.08,
+        WANDER_AMPLITUDE: 0.06,
+        AVOIDANCE_WEIGHT: 3.0,
+        AVOIDANCE_RADIUS: 500,
+        RHYTHM_WEIGHT: 0.7,
+        RHYTHM_FREQUENCY: 0.12,
+        RHYTHM_AMPLITUDE: 0.04,
+        EVENT_WEIGHT: 1.5,
+        EVENT_INTENSITY: 0.10,
+        EVENT_DECAY: 0.92,
+        EVENT_INTERVAL_MIN: 15,
+        EVENT_INTERVAL_MAX: 60,
+        CENTERING_WEIGHT: 0.15,
+        WIDTH_CURVATURE_COUPLING: 0.7,
+        WIDTH_TRANSITION_RATE: 0.12,
+        // Agent physics (mirrors Arrow physics, slightly conservative)
+        AGENT_STEER_RATE: 0.011,
+        AGENT_STEER_MAX: 0.038,
+        AGENT_GRIP: 0.030,
+        // Track center offset from agent path
+        OFFSET_FREQUENCY: 0.02,
+        OFFSET_AMPLITUDE: 0.8,
+        AGENT_MARGIN: 18,
+        // Timer
+        START_TIME: 30,
+        TIME_TOKEN_VALUE: 3.5,
+        TOKEN_RADIUS: 10,
+    };
+    // Overlay saved dev config from localStorage
+    try {
+        const _devSaved = localStorage.getItem('driftArrowDevConfig');
+        if (_devSaved) Object.assign(CFG, JSON.parse(_devSaved));
+    } catch(e) {}
+
+    // ============================================================
+    // UTILS
+    // ============================================================
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function dist(x1, y1, x2, y2) { return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2); }
+    // Closest distance from point (px,py) to line segment (ax,ay)-(bx,by)
+    function distPointToSeg(px, py, ax, ay, bx, by) {
+        const dx = bx - ax, dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return dist(px, py, ax, ay);
+        const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
+        return dist(px, py, ax + t * dx, ay + t * dy);
+    }
+    // Min distance from point to arrow's two outer wing edges (tip→backLeft, tip→backRight)
+    function distToArrowWings(px, py, arrowX, arrowY, facing) {
+        const cos = Math.cos(facing), sin = Math.sin(facing);
+        const nx = -sin, ny = cos; // perpendicular
+        const tipX = arrowX + cos * CFG.ARROW_LENGTH * 0.6;
+        const tipY = arrowY + sin * CFG.ARROW_LENGTH * 0.6;
+        const backX = arrowX - cos * CFG.ARROW_LENGTH * 0.4;
+        const backY = arrowY - sin * CFG.ARROW_LENGTH * 0.4;
+        const hw = CFG.ARROW_WIDTH / 2;
+        const d1 = distPointToSeg(px, py, tipX, tipY, backX + nx * hw, backY + ny * hw);
+        const d2 = distPointToSeg(px, py, tipX, tipY, backX - nx * hw, backY - ny * hw);
+        return Math.min(d1, d2);
+    }
+
+    // Simple hash-based value noise — output range: -1..1
+    function valueNoise(t) {
+        const i = Math.floor(t);
+        const f = t - i;
+        const smooth = f * f * (3 - 2 * f);
+        const hash = (n) => {
+            const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+            return x - Math.floor(x);
+        };
+        return lerp(hash(i) * 2 - 1, hash(i + 1) * 2 - 1, smooth);
+    }
+
+    // ============================================================
+    // PROCEDURAL TRACK
+    // ============================================================
+
+    class Track {
+        constructor() {
+            this.spine = [];
+            this.difficulty = 0;
+            this.segmentIndex = 0;
+            // Agent physics state
+            this.agentX = 0;
+            this.agentY = 0;
+            this.agentFacing = -Math.PI / 2;
+            this.agentMoveAngle = -Math.PI / 2;
+            this.agentSteerVel = 0;
+            // Agent behavioral state
+            this.agentWanderPhase = 0;
+            this.agentRhythmPhase = 0;
+            this.agentEventTimer = 0;
+            this.agentEventCurvature = 0;
+            this.agentEventDir = 1;
+            // Track center tracking for spine angle computation
+            this.prevCenterX = 0;
+            this.prevCenterY = 0;
+        }
+
+        init(startX, startY) {
+            this.spine = [];
+            this.segmentIndex = 0;
+            this.difficulty = 0;
+            this.backWall = null;
+            // Agent physics reset
+            this.agentX = startX;
+            this.agentY = startY;
+            this.agentFacing = -Math.PI / 2;
+            this.agentMoveAngle = -Math.PI / 2;
+            this.agentSteerVel = 0;
+            // Agent behavioral state reset — randomise phases so each run differs
+            this.agentWanderPhase = Math.random() * 1000;
+            this.agentRhythmPhase = Math.random() * Math.PI * 2;
+            this.agentEventTimer = CFG.EVENT_INTERVAL_MIN + Math.floor(Math.random() * 20);
+            this.agentEventCurvature = 0;
+            this.agentEventDir = 1;
+            // Center tracking
+            this.prevCenterX = startX;
+            this.prevCenterY = startY;
+
+            for (let i = 0; i < CFG.LOOK_AHEAD + CFG.LOOK_BEHIND + 20; i++) {
+                this.generateNext();
+            }
+        }
+
+        // Returns the minimum distance from (cx,cy) to any non-recent spine segment
+        _minDistToOldTrack(cx, cy) {
+            const recentThreshold = 60;
+            const len = this.spine.length;
+            if (len < recentThreshold) return Infinity;
+            const checkEnd = len - recentThreshold;
+            let minD2 = Infinity;
+            for (let i = 0; i < checkEnd; i++) {
+                const s = this.spine[i];
+                const dx = cx - s.x;
+                const dy = cy - s.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < minD2) minD2 = d2;
+            }
+            return Math.sqrt(minD2);
+        }
+
+        // Check if candidate position would cause wall overlap with RECENT segments
+        // Returns true if walls would overlap
+        _wouldOverlapRecent(cx, cy, candWidth) {
+            const skipLast = 10;
+            const checkWindow = 120;
+            const len = this.spine.length;
+            if (len < skipLast + 5) return false;
+            const checkStart = Math.max(0, len - checkWindow);
+            const checkEnd = len - skipLast;
+            const margin = CFG.OVERLAP_MARGIN;
+            for (let i = checkStart; i < checkEnd; i++) {
+                const s = this.spine[i];
+                const dx = cx - s.x;
+                const dy = cy - s.y;
+                const centerDist = Math.sqrt(dx * dx + dy * dy);
+                const combinedHW = (candWidth + s.width) / 2;
+                if (centerDist < combinedHW + margin) return true;
+            }
+            return false;
+        }
+
+        generateNext() {
+            this.segmentIndex++;
+            this.difficulty = Math.min(1, this.segmentIndex * CFG.DIFFICULTY_RAMP);
+
+            const isRunway = this.segmentIndex < 30;
+            // Ramp offset amplitude from 0 → full over ~40 segments after runway
+            const postRunwayRamp = isRunway ? 0 : Math.min(1, (this.segmentIndex - 30) / 40);
+
+            // ---- Behavior 1: Wander (multi-octave value noise → steering input) ----
+            this.agentWanderPhase += CFG.WANDER_FREQUENCY;
+            const wanderAmp = isRunway ? CFG.WANDER_AMPLITUDE * 0.15 : CFG.WANDER_AMPLITUDE;
+            const n1 = valueNoise(this.agentWanderPhase * 1.0);
+            const n2 = valueNoise(this.agentWanderPhase * 2.37) * 0.5;
+            const n3 = valueNoise(this.agentWanderPhase * 5.81) * 0.25;
+            const wander_raw = (n1 + n2 + n3) * wanderAmp;
+
+            // ---- Behavior 2: Avoidance (steers agent away from old track) ----
+            let avoidance_raw = 0;
+            if (this.spine.length > 60) {
+                const lookaheadSteps = [1, 3, 8, 15, 25];
+                const avoidRadius = CFG.AVOIDANCE_RADIUS;
+                let maxStrength = 0;
+                let bestDir = 0;
+
+                for (const step of lookaheadSteps) {
+                    const lx = this.agentX + Math.cos(this.agentMoveAngle) * CFG.SEGMENT_LENGTH * step;
+                    const ly = this.agentY + Math.sin(this.agentMoveAngle) * CFG.SEGMENT_LENGTH * step;
+                    const d = this._minDistToOldTrack(lx, ly);
+                    if (d < avoidRadius) {
+                        const strength = Math.pow(1 - d / avoidRadius, 2);
+                        if (strength > maxStrength) {
+                            maxStrength = strength;
+                            const checkEnd = this.spine.length - 60;
+                            let nearX = 0, nearY = 0, minD2 = Infinity;
+                            for (let i = 0; i < checkEnd; i++) {
+                                const s = this.spine[i];
+                                const dx2 = lx - s.x, dy2 = ly - s.y;
+                                const d2 = dx2 * dx2 + dy2 * dy2;
+                                if (d2 < minD2) { minD2 = d2; nearX = s.x; nearY = s.y; }
+                            }
+                            const toNearX = nearX - lx;
+                            const toNearY = nearY - ly;
+                            const rightX = Math.cos(this.agentMoveAngle + Math.PI / 2);
+                            const rightY = Math.sin(this.agentMoveAngle + Math.PI / 2);
+                            const dot = toNearX * rightX + toNearY * rightY;
+                            bestDir = dot > 0 ? -1 : 1;
+                        }
+                    }
+                }
+                avoidance_raw = bestDir * maxStrength;
+
+                // Hard override: if agent's next step overlaps recent segments, force avoidance
+                const estWidth = this.spine.length > 0 ? this.spine[this.spine.length - 1].width : CFG.TRACK_WIDTH;
+                const nextX = this.agentX + Math.cos(this.agentMoveAngle) * CFG.SEGMENT_LENGTH;
+                const nextY = this.agentY + Math.sin(this.agentMoveAngle) * CFG.SEGMENT_LENGTH;
+                if (this._wouldOverlapRecent(nextX, nextY, estWidth)) {
+                    const overrideDir = bestDir !== 0 ? bestDir : 1;
+                    avoidance_raw = overrideDir * 2.0;
+                }
+            }
+
+            // ---- Behavior 3: Rhythm (periodic oscillation → steering input) ----
+            this.agentRhythmPhase += CFG.RHYTHM_FREQUENCY;
+            const rhythm_raw = Math.sin(this.agentRhythmPhase) * CFG.RHYTHM_AMPLITUDE * (0.5 + this.difficulty * 0.5);
+
+            // ---- Behavior 4: Challenge events (decaying impulse → steering input) ----
+            let event_raw = 0;
+            if (!isRunway) {
+                this.agentEventTimer--;
+                if (this.agentEventTimer <= 0) {
+                    this.agentEventDir = -this.agentEventDir;
+                    this.agentEventCurvature = CFG.EVENT_INTENSITY * (0.7 + this.difficulty * 0.3);
+                    const range = CFG.EVENT_INTERVAL_MAX - CFG.EVENT_INTERVAL_MIN;
+                    this.agentEventTimer = CFG.EVENT_INTERVAL_MIN + Math.floor(Math.random() * range);
+                }
+                event_raw = this.agentEventDir * this.agentEventCurvature;
+                this.agentEventCurvature *= CFG.EVENT_DECAY;
+                if (this.agentEventCurvature < 0.005) this.agentEventCurvature = 0;
+            }
+
+            // ---- Behavior 5: Centering (restoring force based on agentFacing) ----
+            const referenceAngle = -Math.PI / 2;
+            let facingDrift = this.agentFacing - referenceAngle;
+            while (facingDrift > Math.PI) facingDrift -= Math.PI * 2;
+            while (facingDrift < -Math.PI) facingDrift += Math.PI * 2;
+            const centering_raw = -facingDrift;
+
+            // ---- Blend behaviors → steering input [-1, 1] ----
+            const blended = wander_raw    * CFG.WANDER_WEIGHT
+                          + avoidance_raw * CFG.AVOIDANCE_WEIGHT
+                          + rhythm_raw    * CFG.RHYTHM_WEIGHT
+                          + event_raw     * CFG.EVENT_WEIGHT
+                          + centering_raw * CFG.CENTERING_WEIGHT;
+            const inputDir = clamp(blended, -1, 1);
+
+            // ---- Agent drift physics (mirrors Arrow.update()) ----
+            if (inputDir !== 0) {
+                this.agentSteerVel += inputDir * CFG.AGENT_STEER_RATE;
+                this.agentSteerVel = clamp(this.agentSteerVel, -CFG.AGENT_STEER_MAX, CFG.AGENT_STEER_MAX);
+            } else {
+                this.agentSteerVel *= 0.85;
+                if (Math.abs(this.agentSteerVel) < 0.0001) this.agentSteerVel = 0;
+            }
+            this.agentFacing += this.agentSteerVel;
+
+            // moveAngle catches up to facing (drift lag)
+            let moveDiff = this.agentFacing - this.agentMoveAngle;
+            while (moveDiff > Math.PI) moveDiff -= Math.PI * 2;
+            while (moveDiff < -Math.PI) moveDiff += Math.PI * 2;
+            this.agentMoveAngle += moveDiff * CFG.AGENT_GRIP;
+
+            // Step position along moveAngle (not facing)
+            this.agentX += Math.cos(this.agentMoveAngle) * CFG.SEGMENT_LENGTH;
+            this.agentY += Math.sin(this.agentMoveAngle) * CFG.SEGMENT_LENGTH;
+
+            // ---- Track center offset from agent path ----
+            const perpX = Math.cos(this.agentMoveAngle + Math.PI / 2);
+            const perpY = Math.sin(this.agentMoveAngle + Math.PI / 2);
+            const prevWidth = this.spine.length > 0 ? this.spine[this.spine.length - 1].width : CFG.TRACK_WIDTH;
+            const maxOffset = Math.max(0, prevWidth / 2 - CFG.AGENT_MARGIN);
+            const effectiveAmp = CFG.OFFSET_AMPLITUDE * postRunwayRamp;
+            const offsetNoise = valueNoise(this.segmentIndex * CFG.OFFSET_FREQUENCY);
+            const offset = offsetNoise * maxOffset * effectiveAmp;
+            const centerX = this.agentX + perpX * offset;
+            const centerY = this.agentY + perpY * offset;
+
+            // ---- Spine angle from consecutive center positions ----
+            const dx = centerX - this.prevCenterX;
+            const dy = centerY - this.prevCenterY;
+            const segAngle = Math.atan2(dy, dx);
+            this.prevCenterX = centerX;
+            this.prevCenterY = centerY;
+
+            // ---- Width: agent drift-amount coupled, ramped in by distance ----
+            const maxWidth = CFG.TRACK_WIDTH;
+            const minWidth = CFG.MIN_TRACK_WIDTH;
+            const driftAmount = Math.abs(moveDiff); // facing-moveAngle lag before this step's update
+            const curvatureFraction = clamp(driftAmount / 0.5, 0, 1);
+            // Ramp coupling from 0 → full over first 300 segments so early game stays wide
+            const couplingRamp = clamp(this.segmentIndex / 300, 0, 1);
+            const baseWidth = lerp(maxWidth, minWidth, curvatureFraction * CFG.WIDTH_CURVATURE_COUPLING * couplingRamp);
+            const difficultyNarrow = this.difficulty * 0.4 * (maxWidth - minWidth);
+            const breathingPulse = Math.sin(this.segmentIndex * 0.015) * 12;
+            // Effective minimum ramps from 2× minWidth down to minWidth over first 500 segments
+            const effectiveMin = lerp(minWidth * 2, minWidth, clamp(this.segmentIndex / 500, 0, 1));
+            const targetWidth = clamp(baseWidth - difficultyNarrow + breathingPulse, effectiveMin, maxWidth);
+            let smoothW = targetWidth;
+            if (this.spine.length > 0) {
+                smoothW = lerp(this.spine[this.spine.length - 1].width, targetWidth, CFG.WIDTH_TRANSITION_RATE);
+            }
+
+            const newSeg = {
+                x: centerX,
+                y: centerY,
+                angle: segAngle,
+                width: smoothW,
+                index: this.segmentIndex
+            };
+            this.spine.push(newSeg);
+
+            if (this.onSegmentGenerated) {
+                this.onSegmentGenerated(newSeg, this.difficulty);
+            }
+        }
+
+        // Trim old segments and generate new ones
+        update(arrowSegIdx) {
+            this.minSegIdx = this.spine.length > 0 ? this.spine[0].index : 0;
+            // Remove segments far behind — store a back wall at the cut point
+            while (this.spine.length > 0 && this.spine[0].index < arrowSegIdx - CFG.LOOK_BEHIND) {
+                const removed = this.spine.shift();
+                this.backWall = {
+                    x: removed.x,
+                    y: removed.y,
+                    angle: removed.angle,
+                    width: removed.width + 40
+                };
+                this.minSegIdx = this.spine.length > 0 ? this.spine[0].index : removed.index;
+            }
+            // Generate ahead
+            const needed = arrowSegIdx + CFG.LOOK_AHEAD;
+            while (this.spine.length === 0 || this.spine[this.spine.length - 1].index < needed) {
+                this.generateNext();
+            }
+        }
+
+        getSegment(idx) {
+            for (const s of this.spine) {
+                if (s.index === idx) return s;
+            }
+            return null;
+        }
+
+        // Find closest segment to a point
+        findClosest(px, py) {
+            let best = null, bestDist = Infinity;
+            for (const s of this.spine) {
+                const d = dist(px, py, s.x, s.y);
+                if (d < bestDist) { bestDist = d; best = s; }
+            }
+            return best;
+        }
+
+        // Get left and right wall points for a segment
+        getWalls(seg) {
+            const nx = Math.cos(seg.angle + Math.PI / 2);
+            const ny = Math.sin(seg.angle + Math.PI / 2);
+            const hw = seg.width / 2;
+            return {
+                lx: seg.x + nx * hw, ly: seg.y + ny * hw,
+                rx: seg.x - nx * hw, ry: seg.y - ny * hw,
+            };
+        }
+    }
+
+    // ============================================================
+    // ARROW (PLAYER)
+    // ============================================================
+    // Normalize angle to [-PI, PI]
+    function normalizeAngle(a) {
+        while (a > Math.PI) a -= Math.PI * 2;
+        while (a < -Math.PI) a += Math.PI * 2;
+        return a;
+    }
+
+    // Shortest angular difference from a to b
+    function angleDiff(a, b) {
+        return normalizeAngle(b - a);
+    }
+
+    class Arrow {
+        constructor() { this.reset(0, 0); }
+
+        reset(x, y) {
+            this.x = x;
+            this.y = y;
+            this.facing = -Math.PI / 2;   // where the arrow nose points
+            this.moveAngle = -Math.PI / 2; // actual velocity direction
+            this.steerVel = 0;             // current steering angular velocity
+            this.speedMult = 1;
+            this.alive = true;
+            this.totalDistance = 0;
+            this.currentSegIdx = 0;
+            this.wallHitTimer = 0;
+            this.drifting = false;
+            this.driftAmount = 0;          // how much we're sliding (for visuals)
+            this.driftTrail = [];
+            this.brakeTrail = [];
+            this._lastInputDir = 0;        // previous frame's input direction
+            this._driftBrakeActive = false; // drift+brake mode (mobile: brake right after drift)
+            this._driftBrakeTimer = 0;     // ms held before drift+brake engages
+            this._driftBrakeDelay = 150;   // ms required to confirm drift+brake
+        }
+
+        update(inputDir, dt60, braking, maxSpeed = 1, boostActive = false) {
+            // inputDir: -1 = left, 0 = none, +1 = right
+            // Direct controls: tap left = turn left, tap right = turn right
+
+            // Drift+brake detection with 150ms confirmation delay:
+            // Keyboard: holding direction + brake simultaneously
+            // Mobile/touch: braking immediately after drifting (no gap between inputs)
+            const dtMs = dt60 * (1000 / 60);
+            const wantsDriftBrake = (braking && inputDir !== 0) ||
+                (braking && inputDir === 0 && this._lastInputDir !== 0 && this.drifting);
+
+            if (inputDir !== 0 && !braking) {
+                // Currently steering — remember direction, ready for drift+brake
+                this._lastInputDir = inputDir;
+                this._driftBrakeActive = false;
+                this._driftBrakeTimer = 0;
+            } else if (wantsDriftBrake) {
+                // Accumulate timer; only activate after delay
+                this._driftBrakeTimer += dtMs;
+                if (this._driftBrakeTimer >= this._driftBrakeDelay) {
+                    this._driftBrakeActive = true;
+                }
+            } else if (!braking && inputDir === 0) {
+                // Nothing held — clear state
+                this._driftBrakeActive = false;
+                this._driftBrakeTimer = 0;
+                this._lastInputDir = 0;
+            }
+
+            const driftBraking = this._driftBrakeActive;
+
+            if (inputDir !== 0) {
+                // Steer the facing angle (allowed during drift+brake too)
+                this.steerVel += inputDir * CFG.STEER_RATE * dt60;
+                this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
+            } else {
+                // Dampen steering velocity when not pressing
+                this.steerVel *= Math.pow(0.85, dt60);
+                if (Math.abs(this.steerVel) < 0.001) this.steerVel = 0;
+            }
+
+            // Apply steering to facing angle
+            this.facing += this.steerVel * dt60;
+
+            // When not pressing direction, gradually realign facing to movement direction
+            // During drift+brake, skip realign to lock the drift angle
+            if (inputDir === 0 && !driftBraking) {
+                const diff = angleDiff(this.facing, this.moveAngle);
+                this.facing += diff * CFG.REALIGN_RATE * dt60;
+            }
+
+            // Movement: velocity direction slowly catches up to facing direction
+            // This is the core drift mechanic — low GRIP = more sliding
+            // During speed boost, grip is halved so the arrow slides more
+            const diff = angleDiff(this.moveAngle, this.facing);
+            const effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
+            const gripDelta = diff * effectiveGrip * dt60;
+            this.moveAngle += gripDelta;
+            if (driftBraking) {
+                // Rotate facing by the same amount so the drift angle stays stable
+                // The arrow keeps curving but the slide angle doesn't grow or shrink
+                this.facing += gripDelta;
+            }
+
+            // Calculate drift amount (angle between facing and movement)
+            this.driftAmount = Math.abs(angleDiff(this.facing, this.moveAngle));
+            this.drifting = this.driftAmount > 0.05;
+
+            // Drift drag: exponential curve — small drifts barely slow, big drifts drain hard
+            // driftAmount is in radians, ~0.05 = tiny drift, ~1.0 = extreme sideways
+            const dragLoss = Math.pow(this.driftAmount, CFG.DRIFT_DRAG_EXP) * CFG.DRIFT_DRAG_SCALE * dt60;
+            this.speedMult = Math.max(0.5, this.speedMult - dragLoss);
+
+            // Move along VELOCITY direction (not facing direction)
+            const speed = CFG.ARROW_SPEED * this.speedMult * dt60;
+            this.x += Math.cos(this.moveAngle) * speed;
+            this.y += Math.sin(this.moveAngle) * speed;
+            this.totalDistance += speed;
+
+            // Recover speed: fast burst when releasing drift, slower while drifting
+            // No recovery while braking
+            if (!braking) {
+                let recoveryRate;
+                if (inputDir === 0 && this.driftAmount < 0.15) {
+                    recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
+                } else if (this.driftAmount < 0.05) {
+                    recoveryRate = CFG.SPEED_RECOVERY * 2;
+                } else {
+                    recoveryRate = CFG.SPEED_RECOVERY * 0.3;
+                }
+                if (this.speedMult < maxSpeed) {
+                    this.speedMult = Math.min(maxSpeed, this.speedMult + recoveryRate * dt60);
+                }
+            }
+
+            // Wall hit timer
+            if (this.wallHitTimer > 0) this.wallHitTimer -= dt60;
+
+            // Drift trail — emit from rear when sliding
+            if (this.drifting) {
+                const backX = this.x - Math.cos(this.facing) * CFG.ARROW_LENGTH * 0.4;
+                const backY = this.y - Math.sin(this.facing) * CFG.ARROW_LENGTH * 0.4;
+                const nx = Math.cos(this.facing + Math.PI / 2);
+                const ny = Math.sin(this.facing + Math.PI / 2);
+                const slideDir = angleDiff(this.facing, this.moveAngle);
+                // Smooth blend: track a running blend value (0=cyan, 1=magenta)
+                const targetBlend = slideDir > 0 ? 1 : 0;
+                if (this._driftColorBlend === undefined) this._driftColorBlend = targetBlend;
+                this._driftColorBlend += (targetBlend - this._driftColorBlend) * 0.08 * dt60;
+                const b = this._driftColorBlend;
+                // Lerp between cyan (#00ffff) and magenta (#ff00ff)
+                const cr = Math.round(255 * b);
+                const cg = Math.round(255 * (1 - b));
+                const cb = 255;
+                const trailColor = 'rgb(' + cr + ',' + cg + ',' + cb + ')';
+                this.driftTrail.push({
+                    x: backX + nx * CFG.ARROW_WIDTH * 0.4,
+                    y: backY + ny * CFG.ARROW_WIDTH * 0.4,
+                    age: 0,
+                    color: trailColor
+                });
+                this.driftTrail.push({
+                    x: backX - nx * CFG.ARROW_WIDTH * 0.4,
+                    y: backY - ny * CFG.ARROW_WIDTH * 0.4,
+                    age: 0,
+                    color: trailColor
+                });
+            }
+
+            // Age and cull trail
+            for (let i = this.driftTrail.length - 1; i >= 0; i--) {
+                this.driftTrail[i].age += dt60;
+                if (this.driftTrail[i].age > 40) {
+                    this.driftTrail.splice(i, 1);
+                }
+            }
+        }
+
+        // The angle used for rendering the arrow visual
+        get angle() { return this.facing; }
+    }
+
+    // ============================================================
+    // PARTICLES
+    // ============================================================
+    class Particles {
+        constructor() { this.list = []; }
+
+        emit(x, y, count, color, spread, speed, life) {
+            for (let i = 0; i < count; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const s = speed * (0.5 + Math.random() * 0.5);
+                this.list.push({
+                    x, y, vx: Math.cos(a) * s * spread + (Math.random() - 0.5) * speed,
+                    vy: Math.sin(a) * s * spread + (Math.random() - 0.5) * speed,
+                    life, maxLife: life, color, size: 2 + Math.random() * 3
+                });
+            }
+        }
+
+        sparkWall(x, y) {
+            this.emit(x, y, 12, '#ff3366', 1, 3, 25);
+            this.emit(x, y, 6, '#ffffff', 1, 2, 15);
+        }
+
+        update(dt60) {
+            for (let i = this.list.length - 1; i >= 0; i--) {
+                const p = this.list[i];
+                p.x += p.vx * dt60;
+                p.y += p.vy * dt60;
+                p.vx *= 0.96;
+                p.vy *= 0.96;
+                p.life -= dt60;
+                if (p.life <= 0) this.list.splice(i, 1);
+            }
+        }
+
+        render(ctx, camX, camY) {
+            for (const p of this.list) {
+                const alpha = clamp(p.life / p.maxLife, 0, 1);
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = p.color;
+                const sz = p.size * alpha;
+                ctx.fillRect(p.x - camX - sz / 2, p.y - camY - sz / 2, sz, sz);
+            }
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    // ============================================================
+    // TIME TOKENS
+    // ============================================================
+    // Hazard types for road dangers
+    const HAZARD = { SLOW: 0, SPEED: 1, DEATH: 2 };
+
+    // These are in CFG so dev.html can tune them
+    if (!CFG.HAZARD_RADIUS) CFG.HAZARD_RADIUS = 10;
+    if (!CFG.DEATH_HAZARD_RADIUS) CFG.DEATH_HAZARD_RADIUS = 5;
+    if (!CFG.HAZARD_EFFECT_DUR) CFG.HAZARD_EFFECT_DUR = 180; // 3 seconds at 60fps
+    if (!CFG.TOKEN_MIN_GAP) CFG.TOKEN_MIN_GAP = 25;
+    if (!CFG.TOKEN_SPAWN_CHANCE) CFG.TOKEN_SPAWN_CHANCE = 0.025;
+    if (!CFG.TOKEN_NO_SPAWN_ZONE) CFG.TOKEN_NO_SPAWN_ZONE = 40;
+    if (!CFG.HAZARD_MIN_GAP) CFG.HAZARD_MIN_GAP = 10;
+    if (!CFG.HAZARD_SPAWN_CHANCE) CFG.HAZARD_SPAWN_CHANCE = 0.02;
+    if (!CFG.HAZARD_NO_SPAWN_ZONE) CFG.HAZARD_NO_SPAWN_ZONE = 80;
+    if (!CFG.HAZARD_SLOW_MULT) CFG.HAZARD_SLOW_MULT = 0.55;
+    if (!CFG.HAZARD_SPEED_MULT) CFG.HAZARD_SPEED_MULT = 1.35;
+    if (!CFG.OVERLAP_MARGIN) CFG.OVERLAP_MARGIN = 15;
+
+    class TimeTokenManager {
+        constructor() {
+            this.tokens = [];  // {x, y, segIdx, collected, pulse}
+            this.collectFlash = 0;
+            this.lastSpawnSeg = 0;
+        }
+
+        reset() {
+            this.tokens = [];
+            this.collectFlash = 0;
+            this.lastSpawnSeg = 0;
+        }
+
+        // Called by Track.generateNext when a new segment is created
+        spawnOnSegment(seg, difficulty) {
+            if (seg.index < CFG.TOKEN_NO_SPAWN_ZONE) return;
+            if (seg.index - this.lastSpawnSeg < CFG.TOKEN_MIN_GAP) return;
+            const chance = CFG.TOKEN_SPAWN_CHANCE + difficulty * 0.01;
+            if (Math.random() > chance) return;
+            const nx = Math.cos(seg.angle + Math.PI / 2);
+            const ny = Math.sin(seg.angle + Math.PI / 2);
+            const offset = (Math.random() - 0.5) * seg.width * 0.5;
+            this.tokens.push({
+                x: seg.x + nx * offset,
+                y: seg.y + ny * offset,
+                segIdx: seg.index,
+                collected: false,
+                pulse: Math.random() * Math.PI * 2
+            });
+            this.lastSpawnSeg = seg.index;
+        }
+
+        // Remove tokens on segments that have been deleted
+        cullBefore(minSegIdx) {
+            this.tokens = this.tokens.filter(t => t.segIdx >= minSegIdx);
+        }
+
+        checkCollect(arrowX, arrowY, arrowFacing) {
+            let timeGained = 0;
+            for (const t of this.tokens) {
+                if (t.collected) continue;
+                const d = distToArrowWings(t.x, t.y, arrowX, arrowY, arrowFacing);
+                if (d < CFG.TOKEN_RADIUS) {
+                    t.collected = true;
+                    timeGained += CFG.TIME_TOKEN_VALUE;
+                    this.collectFlash = 20;
+                }
+            }
+            return timeGained;
+        }
+
+        update(dt60) {
+            if (this.collectFlash > 0) this.collectFlash -= dt60;
+        }
+
+        render(ctx, camX, camY) {
+            const now = Date.now() / 1000;
+            for (const t of this.tokens) {
+                if (t.collected) continue;
+                const sx = t.x - camX;
+                const sy = t.y - camY;
+                const pulse = 0.8 + 0.2 * Math.sin(now * 4 + t.pulse);
+                const r = CFG.TOKEN_RADIUS * pulse;
+
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 160, 0.1)';
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 160, 0.2)';
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(sx, sy, r, 0, Math.PI * 2);
+                ctx.fillStyle = '#00ffa0';
+                ctx.shadowColor = '#00ffa0';
+                ctx.shadowBlur = 15;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.fillStyle = '#003320';
+                ctx.font = 'bold ' + Math.floor(r * 1.2) + 'px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('+', sx, sy + 1);
+                ctx.textBaseline = 'alphabetic';
+                ctx.textAlign = 'left';
+            }
+        }
+    }
+
+    // ============================================================
+    // ROAD HAZARDS
+    // ============================================================
+    class HazardManager {
+        constructor() {
+            this.hazards = [];  // {x, y, segIdx, type, hit}
+            this.effectStack = 0; // positive = speed, negative = slow, 0 = neutral
+            this.effectTimer = 0;
+            this.lastSpawnSeg = 0;
+        }
+
+        reset() {
+            this.hazards = [];
+            this.effectStack = 0;
+            this.effectTimer = 0;
+            this.lastSpawnSeg = 0;
+        }
+
+        spawnOnSegment(seg, difficulty) {
+            // Start spawning after some distance; ~2.5% chance per segment
+            if (seg.index < CFG.HAZARD_NO_SPAWN_ZONE) return;
+            if (seg.index - this.lastSpawnSeg < CFG.HAZARD_MIN_GAP) return;
+            const chance = CFG.HAZARD_SPAWN_CHANCE + difficulty * 0.015;
+            if (Math.random() > chance) return;
+            const nx = Math.cos(seg.angle + Math.PI / 2);
+            const ny = Math.sin(seg.angle + Math.PI / 2);
+            const offset = (Math.random() - 0.5) * seg.width * 0.4;
+            // Pick type: death is rarer
+            let type;
+            const r = Math.random();
+            if (r < 0.35) type = HAZARD.SLOW;
+            else if (r < 0.70) type = HAZARD.SPEED;
+            else type = HAZARD.DEATH;
+            this.hazards.push({
+                x: seg.x + nx * offset,
+                y: seg.y + ny * offset,
+                segIdx: seg.index,
+                type: type,
+                hit: false
+            });
+            this.lastSpawnSeg = seg.index;
+        }
+
+        cullBefore(minSegIdx) {
+            this.hazards = this.hazards.filter(h => h.segIdx >= minSegIdx);
+        }
+
+        // Returns: null, 'slow', 'speed', or 'death'
+        checkCollision(arrowX, arrowY, arrowFacing) {
+            for (const h of this.hazards) {
+                if (h.hit) continue;
+                // Check distance from hazard center to arrow's two wing edges
+                const d = distToArrowWings(h.x, h.y, arrowX, arrowY, arrowFacing);
+                const radius = h.type === HAZARD.DEATH ? CFG.DEATH_HAZARD_RADIUS : CFG.HAZARD_RADIUS;
+                if (d < radius) {
+                    h.hit = true;
+                    if (h.type === HAZARD.DEATH) return 'death';
+                    if (h.type === HAZARD.SLOW) {
+                        // Additive: slow cancels speed, stacking extends timer
+                        if (this.effectStack > 0) {
+                            // Cancel speed effect
+                            this.effectStack--;
+                            if (this.effectStack === 0) this.effectTimer = 0;
+                        } else {
+                            this.effectStack--;
+                            this.effectTimer = CFG.HAZARD_EFFECT_DUR; // reset/extend timer
+                        }
+                        return 'slow';
+                    }
+                    if (h.type === HAZARD.SPEED) {
+                        // Additive: speed cancels slow, stacking extends timer
+                        if (this.effectStack < 0) {
+                            // Cancel slow effect
+                            this.effectStack++;
+                            if (this.effectStack === 0) this.effectTimer = 0;
+                        } else {
+                            this.effectStack++;
+                            this.effectTimer = CFG.HAZARD_EFFECT_DUR; // reset/extend timer
+                        }
+                        return 'speed';
+                    }
+                }
+            }
+            return null;
+        }
+
+        update(dt60) {
+            if (this.effectTimer > 0) {
+                this.effectTimer -= dt60;
+                if (this.effectTimer <= 0) {
+                    this.effectTimer = 0;
+                    this.effectStack = 0;
+                }
+            }
+        }
+
+        getSpeedMult() {
+            if (this.effectStack === 0 || this.effectTimer <= 0) return 1;
+            if (this.effectStack < 0) return CFG.HAZARD_SLOW_MULT;
+            if (this.effectStack > 0) return CFG.HAZARD_SPEED_MULT;
+            return 1;
+        }
+
+        getActiveEffect() {
+            if (this.effectStack === 0 || this.effectTimer <= 0) return null;
+            return {
+                type: this.effectStack < 0 ? 'slow' : 'speed',
+                timer: this.effectTimer
+            };
+        }
+
+        render(ctx, camX, camY) {
+            const now = Date.now() / 1000;
+            for (const h of this.hazards) {
+                if (h.hit) continue;
+                const sx = h.x - camX;
+                const sy = h.y - camY;
+
+                let color, symbolColor, symbol, glowColor, strokeColor;
+                if (h.type === HAZARD.SLOW) {
+                    color = '#4488ff';
+                    glowColor = 'rgba(68, 136, 255, 0.15)';
+                    strokeColor = '#aaccff';
+                    symbolColor = '#ffffff';
+                    symbol = '~';
+                } else if (h.type === HAZARD.SPEED) {
+                    color = '#ffaa00';
+                    glowColor = 'rgba(255, 170, 0, 0.15)';
+                    strokeColor = '#ffdd88';
+                    symbolColor = '#ffffff';
+                    symbol = '>';
+                } else {
+                    color = '#ff2244';
+                    glowColor = null;
+                    strokeColor = '#ff2244';
+                    symbolColor = '#ffffff';
+                    symbol = 'X';
+                }
+
+                const isDeath = h.type === HAZARD.DEATH;
+                const baseRadius = isDeath ? CFG.DEATH_HAZARD_RADIUS : CFG.HAZARD_RADIUS;
+                const pulse = isDeath ? 1 : 0.85 + 0.15 * Math.sin(now * 5 + h.segIdx);
+                const r = baseRadius * pulse;
+
+                // Outer glow (skip for death — keep it solid and clean)
+                if (glowColor) {
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
+                    ctx.fillStyle = glowColor;
+                    ctx.fill();
+                }
+
+                // Core fill
+                ctx.beginPath();
+                ctx.arc(sx, sy, r, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                if (!isDeath) {
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = 15;
+                }
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Outline ring
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 1, 0, Math.PI * 2);
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = isDeath ? 2.5 : 2;
+                ctx.stroke();
+
+                // Symbol (white for contrast)
+                ctx.fillStyle = symbolColor;
+                ctx.font = 'bold ' + Math.floor(r * 1.4) + 'px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(symbol, sx, sy + 1);
+                ctx.textBaseline = 'alphabetic';
+                ctx.textAlign = 'left';
+            }
+        }
+    }
+
+    // ============================================================
+    // INPUT
+    // ============================================================
+    class InputManager {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.leftDown = false;
+            this.rightDown = false;
+            this.anyTap = false;
+            this.brakeDown = false;
+
+            // Touch
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                this.anyTap = true;
+                this._handleTouches(e.touches);
+            }, { passive: false });
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                this._handleTouches(e.touches);
+            }, { passive: false });
+            canvas.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                this._handleTouches(e.touches);
+            }, { passive: false });
+            canvas.addEventListener('touchcancel', (e) => {
+                this.leftDown = false;
+                this.rightDown = false;
+            });
+
+            // Mouse
+            canvas.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                this.anyTap = true;
+                this._handleMouse(e);
+            });
+            canvas.addEventListener('mousemove', (e) => {
+                if (e.buttons & 1) this._handleMouse(e);
+            });
+            canvas.addEventListener('mouseup', () => {
+                this.leftDown = false;
+                this.rightDown = false;
+            });
+
+            // Keyboard
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'ArrowLeft' || e.code === 'KeyA') { this.leftDown = true; this.anyTap = true; }
+                if (e.code === 'ArrowRight' || e.code === 'KeyD') { this.rightDown = true; this.anyTap = true; }
+                if (e.code === 'Space') { this.brakeDown = true; this.anyTap = true; e.preventDefault(); }
+            });
+            document.addEventListener('keyup', (e) => {
+                if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.leftDown = false;
+                if (e.code === 'ArrowRight' || e.code === 'KeyD') this.rightDown = false;
+                if (e.code === 'Space') this.brakeDown = false;
+            });
+
+            document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        }
+
+        _handleTouches(touches) {
+            this.leftDown = false;
+            this.rightDown = false;
+            const mid = this.canvas.width / 2;
+            for (let i = 0; i < touches.length; i++) {
+                if (touches[i].clientX < mid) this.leftDown = true;
+                else this.rightDown = true;
+            }
+        }
+
+        _handleMouse(e) {
+            const mid = this.canvas.width / 2;
+            this.leftDown = e.clientX < mid;
+            this.rightDown = e.clientX >= mid;
+        }
+
+        getDir() {
+            if (this.leftDown && this.rightDown) return 0; // braking — no steer
+            if (this.leftDown) return -1;
+            if (this.rightDown) return 1;
+            return 0;
+        }
+
+        isBraking() {
+            return this.brakeDown || (this.leftDown && this.rightDown);
+        }
+
+        consumeTap() {
+            const t = this.anyTap;
+            this.anyTap = false;
+            return t;
+        }
+    }
+
+    // ============================================================
+    // AUDIO
+    // ============================================================
+    class GameAudio {
+        constructor() { this.ctx = null; }
+        init() {
+            try {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) { this.ctx = null; }
+        }
+        _ensure() {
+            if (!this.ctx) this.init();
+            if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+            return !!this.ctx;
+        }
+        wallHit() {
+            if (!this._ensure()) return;
+            const o = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            o.connect(g); g.connect(this.ctx.destination);
+            o.type = 'sawtooth';
+            const t = this.ctx.currentTime;
+            o.frequency.setValueAtTime(250, t);
+            o.frequency.linearRampToValueAtTime(80, t + 0.15);
+            g.gain.setValueAtTime(0.2, t);
+            g.gain.linearRampToValueAtTime(0, t + 0.15);
+            o.start(t); o.stop(t + 0.15);
+        }
+        // Continuous drift hum — call startDrift/stopDrift to manage
+        startDrift() {
+            if (!this._ensure()) return;
+            if (this._driftNode) return; // already playing
+            const ctx = this.ctx;
+
+            // Soft filtered noise-like hum using detuned oscillators
+            const o1 = ctx.createOscillator();
+            const o2 = ctx.createOscillator();
+            const g = ctx.createGain();
+            const filter = ctx.createBiquadFilter();
+
+            o1.type = 'sine';
+            o2.type = 'triangle';
+            o1.frequency.setValueAtTime(85, ctx.currentTime);
+            o2.frequency.setValueAtTime(127, ctx.currentTime); // fifth above
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(300, ctx.currentTime);
+            filter.Q.setValueAtTime(5, ctx.currentTime);
+
+            o1.connect(filter);
+            o2.connect(filter);
+            filter.connect(g);
+            g.connect(ctx.destination);
+            g.gain.setValueAtTime(0, ctx.currentTime);
+            g.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 0.15);
+
+            o1.start();
+            o2.start();
+            this._driftNode = { o1, o2, g, filter };
+        }
+
+        updateDrift(driftAmount) {
+            if (!this._driftNode) return;
+            const ctx = this.ctx;
+            const n = this._driftNode;
+            // Modulate filter and volume with drift intensity
+            const intensity = clamp(driftAmount / 0.8, 0, 1);
+            n.filter.frequency.setTargetAtTime(200 + intensity * 600, ctx.currentTime, 0.05);
+            n.g.gain.setTargetAtTime(0.03 + intensity * 0.06, ctx.currentTime, 0.05);
+            n.o1.frequency.setTargetAtTime(75 + intensity * 60, ctx.currentTime, 0.1);
+        }
+
+        stopDrift() {
+            if (!this._driftNode) return;
+            const ctx = this.ctx;
+            const n = this._driftNode;
+            n.g.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+            const cleanup = () => { try { n.o1.stop(); n.o2.stop(); } catch(e){} };
+            setTimeout(cleanup, 300);
+            this._driftNode = null;
+        }
+        tokenCollect() {
+            if (!this._ensure()) return;
+            const ctx = this.ctx;
+            const t = ctx.currentTime;
+
+            // Pick a random pentatonic note for variety (C, D, E, G, A across octaves)
+            const notes = [523, 587, 659, 784, 880, 1047, 1175, 1319];
+            const baseFreq = notes[Math.floor(Math.random() * notes.length)];
+            // Slight random detune for organic feel
+            const detune = (Math.random() - 0.5) * 30;
+
+            // Soft sine chime — main tone
+            const o1 = ctx.createOscillator();
+            const g1 = ctx.createGain();
+            o1.type = 'sine';
+            o1.frequency.setValueAtTime(baseFreq, t);
+            o1.detune.setValueAtTime(detune, t);
+            o1.connect(g1);
+            g1.gain.setValueAtTime(0, t);
+            g1.gain.linearRampToValueAtTime(0.12, t + 0.02);
+            g1.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+
+            // Soft harmonic overtone (octave + fifth above)
+            const o2 = ctx.createOscillator();
+            const g2 = ctx.createGain();
+            o2.type = 'sine';
+            o2.frequency.setValueAtTime(baseFreq * 1.5, t);
+            o2.detune.setValueAtTime(-detune, t);
+            o2.connect(g2);
+            g2.gain.setValueAtTime(0, t);
+            g2.gain.linearRampToValueAtTime(0.05, t + 0.01);
+            g2.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+
+            g1.connect(ctx.destination);
+            g2.connect(ctx.destination);
+            o1.start(t); o1.stop(t + 0.5);
+            o2.start(t); o2.stop(t + 0.35);
+        }
+    }
+
+    // ============================================================
+    // RENDERER
+    // ============================================================
+    class GameRenderer {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.ctx = canvas.getContext('2d');
+        }
+
+        resize() {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight;
+        }
+
+        clear() {
+            const ctx = this.ctx;
+            ctx.fillStyle = '#0a0014';
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+
+        drawTrack(track, camX, camY) {
+            const ctx = this.ctx;
+            const spine = track.spine;
+            if (spine.length < 2) return;
+
+            // Build wall paths
+            const leftWall = [];
+            const rightWall = [];
+            for (const seg of spine) {
+                const w = track.getWalls(seg);
+                leftWall.push({ x: w.lx - camX, y: w.ly - camY });
+                rightWall.push({ x: w.rx - camX, y: w.ry - camY });
+            }
+
+            // Track surface (dark)
+            ctx.beginPath();
+            ctx.moveTo(leftWall[0].x, leftWall[0].y);
+            for (let i = 1; i < leftWall.length; i++) ctx.lineTo(leftWall[i].x, leftWall[i].y);
+            for (let i = rightWall.length - 1; i >= 0; i--) ctx.lineTo(rightWall[i].x, rightWall[i].y);
+            ctx.closePath();
+            ctx.fillStyle = '#120024';
+            ctx.fill();
+
+            // Center dashes (give sense of speed on straights)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < spine.length; i++) {
+                const seg = spine[i];
+                const phase = seg.index % 4;
+                if (phase >= 2) continue; // gap
+                if (phase !== 0) continue; // only start on phase 0
+                const j = Math.min(i + 2, spine.length - 1);
+                if (j <= i) continue;
+                ctx.beginPath();
+                ctx.moveTo(seg.x - camX, seg.y - camY);
+                ctx.lineTo(spine[j].x - camX, spine[j].y - camY);
+                ctx.stroke();
+            }
+
+            // Road edge markers — periodic ticks perpendicular to the track
+            for (let i = 0; i < spine.length; i += 8) {
+                const seg = spine[i];
+                const w = seg.width;
+                const nx = Math.cos(seg.angle + Math.PI / 2);
+                const ny = Math.sin(seg.angle + Math.PI / 2);
+                const tickLen = 6;
+
+                ctx.strokeStyle = 'rgba(255, 0, 255, 0.3)';
+                ctx.lineWidth = 1.5;
+                // Left tick
+                const lx = seg.x + nx * (w / 2) - camX;
+                const ly = seg.y + ny * (w / 2) - camY;
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
+                ctx.lineTo(lx - nx * tickLen, ly - ny * tickLen);
+                ctx.stroke();
+
+                // Right tick
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+                const rx = seg.x - nx * (w / 2) - camX;
+                const ry = seg.y - ny * (w / 2) - camY;
+                ctx.beginPath();
+                ctx.moveTo(rx, ry);
+                ctx.lineTo(rx + nx * tickLen, ry + ny * tickLen);
+                ctx.stroke();
+            }
+
+            // Neon walls
+            this._drawNeonLine(leftWall, '#ff00ff', 3);
+            this._drawNeonLine(rightWall, '#00ffff', 3);
+
+            // Back wall barrier (red glow across deleted track)
+            if (track.backWall) {
+                const bw = track.backWall;
+                const nx = Math.cos(bw.angle + Math.PI / 2);
+                const ny = Math.sin(bw.angle + Math.PI / 2);
+                const hw = bw.width / 2;
+                const pts = [
+                    { x: bw.x + nx * hw - camX, y: bw.y + ny * hw - camY },
+                    { x: bw.x - nx * hw - camX, y: bw.y - ny * hw - camY }
+                ];
+                this._drawNeonLine(pts, '#ff3366', 4);
+            }
+
+
+        }
+
+        _drawNeonLine(points, color, width) {
+            const ctx = this.ctx;
+            if (points.length < 2) return;
+
+            // Glow
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width + 6;
+            ctx.globalAlpha = 0.15;
+            ctx.stroke();
+            ctx.lineWidth = width + 3;
+            ctx.globalAlpha = 0.3;
+            ctx.stroke();
+
+            // Core
+            ctx.lineWidth = width;
+            ctx.globalAlpha = 0.9;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+
+        drawArrow(arrow, camX, camY, speedMult, hazardEffect) {
+            const ctx = this.ctx;
+            const sx = arrow.x - camX;
+            const sy = arrow.y - camY;
+            const a = arrow.angle;
+            const len = CFG.ARROW_LENGTH;
+            const hw = CFG.ARROW_WIDTH / 2;
+
+            // Brake tyre marks
+            for (const t of arrow.brakeTrail) {
+                const alpha = clamp(1 - t.age / 80, 0, 1) * 0.35;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = 'rgba(40, 20, 60, 0.8)';
+                ctx.fillRect(t.x - camX - 2, t.y - camY - 2, 4, 4);
+            }
+            ctx.globalAlpha = 1;
+
+            // Drift trail
+            for (const t of arrow.driftTrail) {
+                const alpha = clamp(1 - t.age / 40, 0, 1) * 0.5;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = t.color;
+                ctx.fillRect(t.x - camX - 1.5, t.y - camY - 1.5, 3, 3);
+            }
+            ctx.globalAlpha = 1;
+
+            // Arrow body
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(a);
+
+            // Token-driven color: white default, orange on boost, blue on slow
+            let arrowColor, glowColor;
+            if (hazardEffect && hazardEffect.type === 'speed') {
+                arrowColor = '#ff8800';
+                glowColor = '#ffaa00';
+            } else if (hazardEffect && hazardEffect.type === 'slow') {
+                arrowColor = '#4488ff';
+                glowColor = '#4488ff';
+            } else {
+                arrowColor = '#ffffff';
+                glowColor = '#ffffff';
+            }
+
+            // Glow
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = arrow.wallHitTimer > 0 ? 25 : 15;
+
+            // Arrow shape
+            ctx.beginPath();
+            ctx.moveTo(len * 0.6, 0);           // tip
+            ctx.lineTo(-len * 0.4, -hw);        // back left
+            ctx.lineTo(-len * 0.2, 0);          // notch
+            ctx.lineTo(-len * 0.4, hw);         // back right
+            ctx.closePath();
+
+            // Fill with speed-based color (wall flash overrides)
+            const wallFlash = arrow.wallHitTimer > 0 ? 0.5 + Math.sin(arrow.wallHitTimer * 0.5) * 0.5 : 0;
+            if (wallFlash > 0.3) {
+                ctx.fillStyle = '#ff3366';
+            } else {
+                ctx.fillStyle = arrowColor;
+            }
+            ctx.fill();
+
+            // White inner highlight
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.moveTo(len * 0.4, 0);
+            ctx.lineTo(-len * 0.1, -hw * 0.4);
+            ctx.lineTo(0, 0);
+            ctx.lineTo(-len * 0.1, hw * 0.4);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        drawHUD(distance, timeLeft, highScore, speedMult, canvasW, timeFlash, braking, hazardEffect) {
+            const ctx = this.ctx;
+
+            // Distance (top-left)
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(this._formatDist(distance), 15, 35);
+
+            // High score as distance
+            ctx.font = '12px monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillText('BEST: ' + this._formatDist(highScore), 15, 52);
+
+            // Timer (top-right)
+            const timeStr = timeLeft.toFixed(1);
+            ctx.textAlign = 'right';
+            const isLow = timeLeft < 8;
+            const isCritical = timeLeft < 4;
+
+            if (timeFlash > 0) {
+                ctx.shadowColor = '#00ffa0';
+                ctx.shadowBlur = 20;
+                ctx.fillStyle = '#00ffa0';
+                ctx.font = 'bold 28px monospace';
+            } else if (isCritical) {
+                const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 150);
+                ctx.shadowColor = '#ff3366';
+                ctx.shadowBlur = 15 * pulse;
+                ctx.fillStyle = '#ff3366';
+                ctx.font = 'bold 30px monospace';
+            } else if (isLow) {
+                ctx.shadowColor = '#ffaa00';
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = '#ffaa00';
+                ctx.font = 'bold 26px monospace';
+            } else {
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 24px monospace';
+            }
+            ctx.fillText(timeStr + 's', canvasW - 15, 35);
+            ctx.shadowBlur = 0;
+
+            // Speed indicator (centered)
+            if (braking) {
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 16px monospace';
+                ctx.fillStyle = '#ff8800';
+                ctx.shadowColor = '#ff8800';
+                ctx.shadowBlur = 10;
+                ctx.fillText('BRAKE', canvasW / 2, 30);
+                ctx.shadowBlur = 0;
+            } else if (speedMult < 0.9) {
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 14px monospace';
+                ctx.fillStyle = '#ff3366';
+                ctx.fillText('SLOW', canvasW / 2, 30);
+            }
+
+            // Hazard effect indicator
+            if (hazardEffect) {
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 14px monospace';
+                const remaining = Math.ceil(hazardEffect.timer / 60);
+                if (hazardEffect.type === 'slow') {
+                    ctx.fillStyle = '#4488ff';
+                    ctx.shadowColor = '#4488ff';
+                    ctx.shadowBlur = 8;
+                    ctx.fillText('SLOWED ' + remaining + 's', canvasW / 2, 50);
+                } else if (hazardEffect.type === 'speed') {
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.shadowColor = '#ffaa00';
+                    ctx.shadowBlur = 8;
+                    ctx.fillText('BOOST ' + remaining + 's', canvasW / 2, 50);
+                }
+                ctx.shadowBlur = 0;
+            }
+
+            ctx.textAlign = 'left';
+        }
+
+        _formatDist(meters) {
+            const m = Math.floor(meters);
+            if (m < 1000) return m + 'm';
+            const km = m / 1000;
+            return km.toFixed(2) + 'km';
+        }
+
+        drawMenu(canvasW, canvasH, highScore) {
+            const ctx = this.ctx;
+            ctx.textAlign = 'center';
+
+            ctx.shadowColor = '#ff00ff';
+            ctx.shadowBlur = 30;
+            ctx.fillStyle = '#ff00ff';
+            ctx.font = 'bold 52px monospace';
+            ctx.fillText('DRIFT', canvasW / 2, canvasH / 2 - 60);
+
+            ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = '#00ffff';
+            ctx.fillText('ARROW', canvasW / 2, canvasH / 2 - 5);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.font = '16px monospace';
+            ctx.fillText('Tap left/right to drift', canvasW / 2, canvasH / 2 + 40);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.font = '13px monospace';
+            ctx.fillText('Hold both sides to brake', canvasW / 2, canvasH / 2 + 58);
+
+            ctx.fillStyle = 'rgba(0,255,160,0.5)';
+            ctx.font = '13px monospace';
+            ctx.fillText('Collect + tokens \u2022 Avoid hazards', canvasW / 2, canvasH / 2 + 76);
+
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
+            ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + pulse * 0.6) + ')';
+            ctx.font = 'bold 20px monospace';
+            ctx.fillText('TAP TO START', canvasW / 2, canvasH / 2 + 106);
+
+            if (highScore > 0) {
+                ctx.fillStyle = '#ffee00';
+                ctx.font = '15px monospace';
+                ctx.fillText('RECORD: ' + this._formatDist(highScore), canvasW / 2, canvasH / 2 + 145);
+            }
+
+            ctx.textAlign = 'left';
+        }
+
+        drawGameOver(canvasW, canvasH, distance, highScore, isNewHigh, deathCause) {
+            const ctx = this.ctx;
+            ctx.fillStyle = 'rgba(10, 0, 20, 0.7)';
+            ctx.fillRect(0, 0, canvasW, canvasH);
+
+            ctx.textAlign = 'center';
+
+            const deathText = deathCause === 'time' ? 'TIME UP' : 'WRECKED';
+            ctx.shadowColor = '#ff3366';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = '#ff3366';
+            ctx.font = 'bold 40px monospace';
+            ctx.fillText(deathText, canvasW / 2, canvasH / 2 - 50);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 26px monospace';
+            ctx.fillText(this._formatDist(distance), canvasW / 2, canvasH / 2 + 5);
+
+            if (isNewHigh) {
+                ctx.fillStyle = '#ffee00';
+                ctx.font = 'bold 16px monospace';
+                ctx.fillText('NEW RECORD!', canvasW / 2, canvasH / 2 + 35);
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.font = '14px monospace';
+                ctx.fillText('BEST: ' + this._formatDist(highScore), canvasW / 2, canvasH / 2 + 35);
+            }
+
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
+            ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + pulse * 0.6) + ')';
+            ctx.font = '18px monospace';
+            ctx.fillText('TAP TO RETRY', canvasW / 2, canvasH / 2 + 85);
+
+            ctx.textAlign = 'left';
+        }
+    }
+
+    // ============================================================
+    // GAME
+    // ============================================================
+    const STATE = { MENU: 0, COUNTDOWN: 1, PLAYING: 2, GAME_OVER: 3 };
+
+    class Game {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.renderer = new GameRenderer(canvas);
+            this.input = new InputManager(canvas);
+            this.audio = new GameAudio();
+            this.particles = new Particles();
+            this.track = new Track();
+            this.arrow = new Arrow();
+            this.tokens = new TimeTokenManager();
+            this.hazards = new HazardManager();
+            this.state = STATE.MENU;
+            this.highScore = parseInt(localStorage.getItem('driftArrowHigh2') || '0', 10);
+            this.distance = 0;
+            this.timeLeft = 0;
+            this.isNewHigh = false;
+            this.stopped = false;
+            this.gameOverDelay = 0;
+            this.lastSegPassed = 0;
+            this.lastTime = 0;
+            this.camX = 0;
+            this.camY = 0;
+            this.timeFlash = 0;
+            this.prevSpeedMult = 1;
+            this.speedParticleTimer = 0;
+
+            this.renderer.resize();
+            window.addEventListener('resize', () => this.renderer.resize());
+        }
+
+        startGame() {
+            this.audio.init();
+            const cx = this.canvas.width / 2;
+            const cy = this.canvas.height / 2 + 100;
+            this.tokens.reset();
+            this.hazards.reset();
+
+            // Set up segment generation callback for tokens and hazards
+            this.track.onSegmentGenerated = (seg, diff) => {
+                this.tokens.spawnOnSegment(seg, diff);
+                this.hazards.spawnOnSegment(seg, diff);
+            };
+
+            this.track.init(cx, cy);
+
+            // Place arrow a few segments ahead of the very start so the wall doesn't kill instantly
+            const spawnSeg = this.track.spine[Math.min(5, this.track.spine.length - 1)];
+            this.arrow.reset(spawnSeg.x, spawnSeg.y);
+            this.arrow.facing = spawnSeg.angle;
+            this.arrow.moveAngle = spawnSeg.angle;
+            this.distance = 0;
+            this.timeLeft = CFG.START_TIME;
+            this.isNewHigh = false;
+            this.stopped = false;
+            this.gameOverDelay = 0;
+            this.lastSegPassed = 0;
+            this.peakSegIdx = 0;
+            this.backwardTimer = 0;
+            this.timeFlash = 0;
+            this.diedFromWall = false;
+
+            // Place a back wall behind the starting point so the player can't turn back
+            const startSeg = this.track.spine[0];
+            if (startSeg) {
+                this.track.backWall = {
+                    x: startSeg.x,
+                    y: startSeg.y,
+                    angle: startSeg.angle,
+                    width: startSeg.width + 40
+                };
+            }
+
+            // Snap camera immediately to start position
+            const lookAheadDist = 80;
+            this.camX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist - this.canvas.width / 2;
+            this.camY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist - this.canvas.height / 2;
+
+            // Enter countdown state
+            this.countdownTimer = 90; // ~1.5 seconds at 60fps
+            this.state = STATE.COUNTDOWN;
+        }
+
+        die() {
+            this.state = STATE.GAME_OVER;
+            this.audio.stopDrift();
+            if (this.timeLeft <= 0) this.deathCause = 'time';
+            else if (this.diedFromWall) this.deathCause = 'wall';
+            else this.deathCause = 'other';
+            this.gameOverDelay = 60;
+            this.particles.emit(this.arrow.x, this.arrow.y, 30, '#ff3366', 1.5, 4, 40);
+            this.particles.emit(this.arrow.x, this.arrow.y, 20, '#ffee00', 1, 3, 30);
+
+            const score = Math.floor(this.distance);
+            if (score > this.highScore) {
+                this.highScore = score;
+                this.isNewHigh = true;
+                localStorage.setItem('driftArrowHigh2', String(this.highScore));
+            }
+        }
+
+        checkWallCollision() {
+            const arrow = this.arrow;
+            const seg = this.track.findClosest(arrow.x, arrow.y);
+            if (!seg) return;
+
+            arrow.currentSegIdx = seg.index;
+
+            // Wall normal: perpendicular to track direction
+            const nx = Math.cos(seg.angle + Math.PI / 2);
+            const ny = Math.sin(seg.angle + Math.PI / 2);
+            const hw = seg.width / 2;
+
+            // Check the three arrow corner points (matching visual wing edges)
+            const cos = Math.cos(arrow.facing), sin = Math.sin(arrow.facing);
+            const wnx = -sin, wny = cos; // perpendicular to arrow facing
+            const len = CFG.ARROW_LENGTH;
+            const ahw = CFG.ARROW_WIDTH / 2;
+
+            const points = [
+                // tip
+                [arrow.x + cos * len * 0.6, arrow.y + sin * len * 0.6],
+                // back-left wing
+                [arrow.x - cos * len * 0.4 - wnx * ahw, arrow.y - sin * len * 0.4 - wny * ahw],
+                // back-right wing
+                [arrow.x - cos * len * 0.4 + wnx * ahw, arrow.y - sin * len * 0.4 + wny * ahw]
+            ];
+
+            for (const pt of points) {
+                const dx = pt[0] - seg.x;
+                const dy = pt[1] - seg.y;
+                const cross = dx * nx + dy * ny;
+                if (Math.abs(cross) > hw) {
+                    const side = cross > 0 ? 1 : -1;
+                    const hitX = seg.x + nx * hw * side;
+                    const hitY = seg.y + ny * hw * side;
+                    this.particles.emit(hitX, hitY, 15, '#ff3366', 1.5, 3, 25);
+                    this.particles.emit(hitX, hitY, 8, '#ffffff', 1, 2, 15);
+                    this.audio.wallHit();
+                    this.diedFromWall = true;
+                    this.die();
+                    return;
+                }
+            }
+        }
+
+        checkBackWallCollision() {
+            const bw = this.track.backWall;
+            if (!bw) return;
+            const arrow = this.arrow;
+            // The back wall is perpendicular to track direction at the cut point
+            // Check if arrow is behind the wall (on the deleted side)
+            const fwdX = Math.cos(bw.angle);
+            const fwdY = Math.sin(bw.angle);
+            const dx = arrow.x - bw.x;
+            const dy = arrow.y - bw.y;
+            const along = dx * fwdX + dy * fwdY;
+            // Also check lateral distance so it only triggers when near the wall
+            const nx = -fwdY;
+            const ny = fwdX;
+            const lateral = Math.abs(dx * nx + dy * ny);
+            if (along < 0 && lateral < bw.width / 2) {
+                this.particles.emit(bw.x, bw.y, 15, '#ff3366', 1.5, 3, 25);
+                this.audio.wallHit();
+                this.diedFromWall = true;
+                this.die();
+            }
+        }
+
+
+        updatePlaying(dt60) {
+            const dir = this.input.getDir();
+            const braking = this.input.isBraking();
+            const _hazardMult = this.hazards.getSpeedMult();
+            this.arrow.update(dir, dt60, braking, _hazardMult, _hazardMult > 1);
+
+            // Braking: both sides pressed slows down gradually to near-stop
+            if (braking) {
+                this.arrow.speedMult = Math.max(
+                    CFG.BRAKE_MIN_SPEED,
+                    this.arrow.speedMult - CFG.BRAKE_DECEL * dt60
+                );
+            }
+
+            // Drift sound management
+            if (this.arrow.drifting && this.arrow.driftAmount > 0.1) {
+                this.audio.startDrift();
+                this.audio.updateDrift(this.arrow.driftAmount);
+            } else {
+                this.audio.stopDrift();
+            }
+
+            // Update track (generates new segments via callback, culls old ones)
+            this.track.update(this.arrow.currentSegIdx);
+
+            // Cull tokens and hazards on deleted segments
+            if (this.track.minSegIdx) {
+                this.tokens.cullBefore(this.track.minSegIdx);
+                this.hazards.cullBefore(this.track.minSegIdx);
+            }
+
+            // Wall collision
+            this.checkWallCollision();
+            if (this.state !== STATE.PLAYING) return;
+
+            // Back wall collision (barrier at deleted track)
+            this.checkBackWallCollision();
+            if (this.state !== STATE.PLAYING) return;
+
+            if (this.state !== STATE.PLAYING) return;
+
+            // Distance tracking: convert segments to meters
+            const seg = this.track.findClosest(this.arrow.x, this.arrow.y);
+            if (seg && seg.index > this.lastSegPassed) {
+                const segsPassed = seg.index - this.lastSegPassed;
+                this.lastSegPassed = seg.index;
+                this.distance += segsPassed * CFG.METERS_PER_SEGMENT;
+            }
+
+            // Backward detection: if arrow is behind peak, slow down
+            if (seg) {
+                if (seg.index > this.peakSegIdx) {
+                    this.peakSegIdx = seg.index;
+                    this.backwardTimer = 0;
+                } else if (seg.index < this.peakSegIdx - 3) {
+                    // Going backward — ramp up slowdown over ~1 second (60 frames)
+                    this.backwardTimer += dt60;
+                    const brakeFactor = clamp(this.backwardTimer / 60, 0, 1);
+                    this.arrow.speedMult *= (1 - brakeFactor * 0.08 * dt60);
+                    this.arrow.speedMult = Math.max(0.1, this.arrow.speedMult);
+                }
+            }
+
+            // Countdown timer
+            const dtSec = dt60 * 16.67 / 1000;
+            this.timeLeft -= dtSec;
+            if (this.timeLeft <= 0) {
+                this.timeLeft = 0;
+                this.die();
+                return;
+            }
+
+            // Time tokens: collect (spawning handled by track callback)
+            const gained = this.tokens.checkCollect(this.arrow.x, this.arrow.y, this.arrow.facing);
+            if (gained > 0) {
+                this.timeLeft += gained;
+                this.timeFlash = 30;
+                this.audio.tokenCollect();
+                this.particles.emit(this.arrow.x, this.arrow.y, 12, '#00ffa0', 1.2, 3, 20);
+            }
+            this.tokens.update(dt60);
+
+            // Road hazards: check collision
+            const hazardHit = this.hazards.checkCollision(this.arrow.x, this.arrow.y, this.arrow.facing);
+            if (hazardHit === 'death') {
+                this.particles.emit(this.arrow.x, this.arrow.y, 25, '#ff2244', 1.5, 4, 35);
+                this.audio.wallHit();
+                this.diedFromWall = true;
+                this.die();
+                return;
+            } else if (hazardHit === 'slow') {
+                this.particles.emit(this.arrow.x, this.arrow.y, 20, '#4488ff', 1.5, 4, 30);
+                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#88bbff', 1, 2, 20);
+            } else if (hazardHit === 'speed') {
+                this.particles.emit(this.arrow.x, this.arrow.y, 20, '#ff8800', 1.5, 4, 30);
+                this.particles.emit(this.arrow.x, this.arrow.y, 10, '#ffcc44', 1, 2, 20);
+            }
+            this.hazards.update(dt60);
+
+            // Apply hazard speed effect — lerp toward target, not multiplicative
+            const hazardMult = this.hazards.getSpeedMult();
+            if (hazardMult !== 1) {
+                const target = hazardMult;
+                this.arrow.speedMult = lerp(this.arrow.speedMult, target, 0.05 * dt60);
+            }
+
+            // Token effect particles: continuous trail matching arrow color
+            this.speedParticleTimer -= dt60;
+            const activeEffect = this.hazards.getActiveEffect();
+            if (activeEffect && this.speedParticleTimer <= 0) {
+                if (activeEffect.type === 'speed') {
+                    // Boost: orange sparks trailing behind
+                    this.particles.emit(this.arrow.x, this.arrow.y, 3, '#ff8800', 0.8, 2, 15);
+                    this.speedParticleTimer = 3;
+                } else if (activeEffect.type === 'slow') {
+                    // Slow: blue sparks
+                    this.particles.emit(this.arrow.x, this.arrow.y, 2, '#4488ff', 0.8, 2, 12);
+                    this.speedParticleTimer = 5;
+                }
+            }
+
+            // Particles
+            this.particles.update(dt60);
+
+            // Time flash decay
+            if (this.timeFlash > 0) this.timeFlash -= dt60;
+
+            // Camera: follow arrow along MOVEMENT direction (not facing)
+            // Reduce look-ahead when slow/drifting to prevent dizzy spinning
+            const speedFactor = this.arrow.speedMult;
+            const lookAheadDist = 80 * speedFactor;
+            // Use moveAngle for camera so it doesn't swing with steering
+            const targetCamX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist - this.canvas.width / 2;
+            const targetCamY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist - this.canvas.height / 2;
+            // Slower camera lerp when drifting hard to reduce motion sickness
+            const camSpeed = this.arrow.drifting ? 0.04 : 0.07;
+            this.camX = lerp(this.camX, targetCamX, camSpeed * dt60);
+            this.camY = lerp(this.camY, targetCamY, camSpeed * dt60);
+        }
+
+        update(timestamp) {
+            const dt = this.lastTime ? timestamp - this.lastTime : 16.67;
+            this.lastTime = timestamp;
+            const dt60 = dt / 16.67; // normalize to 60fps
+
+            switch (this.state) {
+                case STATE.MENU:
+                    if (this.input.consumeTap()) this.startGame();
+                    break;
+
+                case STATE.COUNTDOWN:
+                    this.countdownTimer -= dt60;
+                    if (this.countdownTimer <= 0) {
+                        this.state = STATE.PLAYING;
+                    }
+                    break;
+
+                case STATE.PLAYING:
+                    this.updatePlaying(dt60);
+                    break;
+
+                case STATE.GAME_OVER:
+                    this.particles.update(dt60);
+                    this.gameOverDelay -= dt60;
+                    if (this.gameOverDelay <= 0 && this.input.consumeTap()) {
+                        this.state = STATE.MENU;
+                    }
+                    break;
+            }
+        }
+
+        render() {
+            const w = this.canvas.width, h = this.canvas.height;
+            this.renderer.clear();
+
+            if (this.state === STATE.MENU) {
+                this.renderer.drawMenu(w, h, this.highScore);
+                return;
+            }
+
+            // Draw track
+            this.renderer.drawTrack(this.track, this.camX, this.camY);
+
+            // Draw time tokens
+            this.tokens.render(this.renderer.ctx, this.camX, this.camY);
+
+            // Draw hazards
+            this.hazards.render(this.renderer.ctx, this.camX, this.camY);
+
+            // Draw particles
+            this.particles.render(this.renderer.ctx, this.camX, this.camY);
+
+            // Draw arrow
+            if (this.state === STATE.PLAYING || this.state === STATE.COUNTDOWN) {
+                this.renderer.drawArrow(this.arrow, this.camX, this.camY, this.arrow.speedMult, this.hazards.getActiveEffect());
+            }
+
+            // HUD
+            if (this.state === STATE.PLAYING) {
+                const braking = this.input.isBraking();
+                const hazardEffect = this.hazards.getActiveEffect();
+                this.renderer.drawHUD(this.distance, this.timeLeft, this.highScore, this.arrow.speedMult, w, this.timeFlash, braking, hazardEffect);
+            }
+
+            // Countdown overlay
+            if (this.state === STATE.COUNTDOWN) {
+                const countNum = Math.ceil(this.countdownTimer / 60);
+                const pulse = 1 + 0.3 * Math.sin((this.countdownTimer % 60) / 60 * Math.PI);
+                const ctx = this.renderer.ctx;
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.fillRect(0, 0, w, h);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `bold ${Math.floor(80 * pulse)}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#00ffa0';
+                ctx.shadowBlur = 30;
+                ctx.fillText(countNum > 0 ? String(countNum) : 'GO!', w / 2, h / 2);
+                ctx.shadowBlur = 0;
+                ctx.font = '18px sans-serif';
+                ctx.fillStyle = '#aaaaaa';
+                ctx.fillText('GET READY', w / 2, h / 2 + 60);
+                ctx.restore();
+            }
+
+            if (this.state === STATE.GAME_OVER) {
+                // Still show track and particles
+                this.renderer.drawGameOver(w, h, this.distance, this.highScore, this.isNewHigh, this.deathCause);
+            }
+        }
+
+        loop(timestamp) {
+            if (this.stopped) return;
+            this.update(timestamp);
+            this.render();
+            requestAnimationFrame((t) => this.loop(t));
+        }
+        stop() { this.stopped = true; }
+
+        start() {
+            requestAnimationFrame((t) => this.loop(t));
+        }
+    }
+
+    // ============================================================
+    // BOOTSTRAP
+    // ============================================================
+    window.__DRIFT_CFG_LIVE = CFG;
+
+    const canvas = document.getElementById('game');
+    let _currentGame = null;
+    function _startGame() {
+        if (_currentGame) _currentGame.stop();
+        _currentGame = new Game(canvas);
+        _currentGame.start();
+    }
+    _startGame();
+    // === GAME CODE END ===
+
+// ============================================================
+// DEV PANEL
+// ============================================================
+
+// ---- Scroll buttons ----
+(function () {
+    const STEP = 120, INTERVAL = 60;
+    let _timer = null;
+
+    function startScroll(dir) {
+        const body = document.getElementById('dev-panel-body');
+        body.scrollTop += dir * STEP;
+        _timer = setInterval(() => { body.scrollTop += dir * STEP; }, INTERVAL);
+    }
+    function stopScroll() { clearInterval(_timer); _timer = null; }
+
+    ['up', 'dn'].forEach((id, i) => {
+        const dir = i === 0 ? -1 : 1;
+        const btn = document.getElementById('scroll-' + id + '-btn');
+        btn.addEventListener('mousedown',  () => startScroll(dir));
+        btn.addEventListener('touchstart', () => startScroll(dir), { passive: true });
+        btn.addEventListener('mouseup',   stopScroll);
+        btn.addEventListener('mouseleave', stopScroll);
+        btn.addEventListener('touchend',  stopScroll);
+        btn.addEventListener('touchcancel', stopScroll);
+    });
+}());
+
+function togglePanel() {
+    const panel = document.getElementById('dev-panel');
+    const btn   = document.getElementById('dev-toggle-btn');
+    panel.classList.toggle('open');
+    btn.textContent = panel.classList.contains('open') ? 'DEV ◀' : 'DEV ▶';
+}
+function closePanel() {
+    document.getElementById('dev-panel').classList.remove('open');
+    document.getElementById('dev-toggle-btn').textContent = 'DEV ▶';
+}
+
+// Hardcoded defaults — must match CFG in index.html exactly
 const DEFAULTS = {
     ARROW_SPEED: 3.5,
     STEER_RATE: 0.014,
@@ -225,16 +2297,36 @@ const DEFAULTS = {
     BRAKE_MIN_SPEED: 0.05,
     SPEED_RECOVERY: 0.012,
     SPEED_RECOVERY_RELEASE: 0.06,
-    TRACK_WIDTH: 120,
-    MIN_TRACK_WIDTH: 45,
+    TRACK_WIDTH: 140,
+    MIN_TRACK_WIDTH: 38,
     SEGMENT_LENGTH: 12,
     LOOK_AHEAD: 120,
     LOOK_BEHIND: 100,
-    ANGLE_SMOOTH: 0.4,
     OVERLAP_MARGIN: 15,
-    SAFE_DIST_MULT: 3.5,
     DIFFICULTY_RAMP: 0.00012,
     METERS_PER_SEGMENT: 0.03,
+    WANDER_WEIGHT: 1.0,
+    WANDER_FREQUENCY: 0.08,
+    WANDER_AMPLITUDE: 0.06,
+    AVOIDANCE_WEIGHT: 3.0,
+    AVOIDANCE_RADIUS: 500,
+    RHYTHM_WEIGHT: 0.7,
+    RHYTHM_FREQUENCY: 0.12,
+    RHYTHM_AMPLITUDE: 0.04,
+    EVENT_WEIGHT: 1.5,
+    EVENT_INTENSITY: 0.10,
+    EVENT_DECAY: 0.92,
+    EVENT_INTERVAL_MIN: 15,
+    EVENT_INTERVAL_MAX: 60,
+    CENTERING_WEIGHT: 0.15,
+    WIDTH_CURVATURE_COUPLING: 0.7,
+    WIDTH_TRANSITION_RATE: 0.12,
+    AGENT_STEER_RATE: 0.011,
+    AGENT_STEER_MAX: 0.038,
+    AGENT_GRIP: 0.030,
+    OFFSET_FREQUENCY: 0.02,
+    OFFSET_AMPLITUDE: 0.8,
+    AGENT_MARGIN: 18,
     START_TIME: 30,
     TIME_TOKEN_VALUE: 3.5,
     TOKEN_RADIUS: 10,
@@ -276,11 +2368,35 @@ const PARAM_SECTIONS = [
         ['SEGMENT_LENGTH', 'Seg Length', 4, 30, 1],
         ['LOOK_AHEAD', 'Look Ahead', 40, 250, 10],
         ['LOOK_BEHIND', 'Look Behind', 30, 200, 10],
-        ['ANGLE_SMOOTH', 'Angle Smooth', 0.1, 1.0, 0.05],
+        ['OVERLAP_MARGIN', 'Overlap Margin', 0, 40, 1],
     ]},
-    { title: 'Overlap Avoidance', params: [
-        ['OVERLAP_MARGIN', 'Margin', 0, 40, 1],
-        ['SAFE_DIST_MULT', 'Safe Dist x', 1.5, 6, 0.25],
+    { title: 'Agent Steering', params: [
+        ['WANDER_WEIGHT', 'Wander Weight', 0, 3, 0.05],
+        ['WANDER_FREQUENCY', 'Wander Freq', 0.01, 0.3, 0.005],
+        ['WANDER_AMPLITUDE', 'Wander Amp', 0.005, 0.2, 0.005],
+        ['AVOIDANCE_WEIGHT', 'Avoid Weight', 0, 8, 0.25],
+        ['AVOIDANCE_RADIUS', 'Avoid Radius', 100, 1200, 25],
+        ['RHYTHM_WEIGHT', 'Rhythm Weight', 0, 2, 0.05],
+        ['RHYTHM_FREQUENCY', 'Rhythm Freq', 0.02, 0.4, 0.01],
+        ['RHYTHM_AMPLITUDE', 'Rhythm Amp', 0.005, 0.15, 0.005],
+        ['EVENT_WEIGHT', 'Event Weight', 0, 4, 0.1],
+        ['EVENT_INTENSITY', 'Event Intensity', 0.02, 0.25, 0.005],
+        ['EVENT_DECAY', 'Event Decay', 0.7, 0.99, 0.01],
+        ['EVENT_INTERVAL_MIN', 'Event Min Gap', 5, 60, 1],
+        ['EVENT_INTERVAL_MAX', 'Event Max Gap', 20, 120, 5],
+        ['CENTERING_WEIGHT', 'Center Weight', 0, 0.5, 0.01],
+        ['WIDTH_CURVATURE_COUPLING', 'Width-Curv', 0, 1, 0.05],
+        ['WIDTH_TRANSITION_RATE', 'Width Smooth', 0.02, 0.5, 0.02],
+    ]},
+    { title: 'Agent Physics', params: [
+        ['AGENT_STEER_RATE', 'Steer Rate', 0.002, 0.03, 0.001],
+        ['AGENT_STEER_MAX', 'Steer Max', 0.01, 0.1, 0.002],
+        ['AGENT_GRIP', 'Grip', 0.005, 0.1, 0.005],
+    ]},
+    { title: 'Agent Offset', params: [
+        ['OFFSET_FREQUENCY', 'Offset Freq', 0.005, 0.1, 0.005],
+        ['OFFSET_AMPLITUDE', 'Offset Amp', 0, 1, 0.05],
+        ['AGENT_MARGIN', 'Agent Margin', 5, 50, 1],
     ]},
     { title: 'Difficulty', params: [
         ['DIFFICULTY_RAMP', 'Ramp Speed', 0.00002, 0.0005, 0.00002],
@@ -305,101 +2421,58 @@ const PARAM_SECTIONS = [
     ]},
 ];
 
-// Current slider values (not yet applied)
-let current = { ...DEFAULTS };
-// Last applied values (what the game is actually using)
-let applied = { ...DEFAULTS };
+// current holds slider values (not yet applied); initialised from live CFG
+// (which already has any localStorage overrides baked in via the sync transform)
+let current = typeof CFG !== 'undefined' ? { ...CFG } : { ...DEFAULTS };
+let applied  = { ...current };
 let hasUnapplied = false;
-
-// Load saved config from localStorage
-try {
-    const saved = localStorage.getItem('driftArrowDevConfig');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        Object.assign(current, parsed);
-        Object.assign(applied, parsed);
-    }
-} catch (e) {}
 
 function buildUI() {
     const container = document.getElementById('params');
     container.innerHTML = '';
-
     for (const section of PARAM_SECTIONS) {
         const div = document.createElement('div');
         div.className = 'section';
-
         const title = document.createElement('div');
         title.className = 'section-title';
         title.textContent = section.title;
         const body = document.createElement('div');
         body.className = 'section-body';
-
         title.addEventListener('click', () => {
             body.style.display = body.style.display === 'none' ? '' : 'none';
         });
-
         div.appendChild(title);
-
         for (const [key, label, min, max, step] of section.params) {
             const row = document.createElement('div');
             row.className = 'param-row';
-
             const lbl = document.createElement('label');
             lbl.textContent = label;
             lbl.title = key;
-
             const slider = document.createElement('input');
             slider.type = 'range';
-            slider.min = min;
-            slider.max = max;
-            slider.step = step;
-            slider.value = current[key];
+            slider.min = min; slider.max = max; slider.step = step;
+            slider.value = current[key] !== undefined ? current[key] : DEFAULTS[key];
             slider.id = 'slider-' + key;
-
             const numInput = document.createElement('input');
             numInput.type = 'number';
-            numInput.min = min;
-            numInput.max = max;
-            numInput.step = step;
-            numInput.value = current[key];
+            numInput.min = min; numInput.max = max; numInput.step = step;
+            numInput.value = slider.value;
             numInput.id = 'num-' + key;
-
-            // Slider changes update number input
             slider.addEventListener('input', () => {
                 const v = parseFloat(slider.value);
-                current[key] = v;
-                numInput.value = v;
-                markChanged();
+                current[key] = v; numInput.value = v; markChanged();
             });
-
-            // Number input changes update slider
-            numInput.addEventListener('input', () => {
-                const v = parseFloat(numInput.value);
-                if (!isNaN(v)) {
-                    current[key] = v;
-                    slider.value = Math.max(min, Math.min(max, v));
-                    markChanged();
-                }
-            });
-
-            // Allow typing values outside slider range
             numInput.addEventListener('change', () => {
                 const v = parseFloat(numInput.value);
                 if (!isNaN(v)) {
                     current[key] = v;
-                    // Clamp slider but keep typed value
                     slider.value = Math.max(min, Math.min(max, v));
                     markChanged();
                 }
             });
-
-            row.appendChild(lbl);
-            row.appendChild(slider);
-            row.appendChild(numInput);
+            row.appendChild(lbl); row.appendChild(slider); row.appendChild(numInput);
             body.appendChild(row);
         }
-
         div.appendChild(body);
         container.appendChild(div);
     }
@@ -412,15 +2485,14 @@ function markChanged() {
 }
 
 function applyConfig() {
-    // Reload the game iframe with config passed via URL hash
-    // This works on file:// and http:// without cross-origin issues
-    const iframe = document.getElementById('game-frame');
-    const hash = '#' + encodeURIComponent(JSON.stringify(current));
-    iframe.src = 'index.html' + hash;
+    Object.assign(CFG, current);
+    autoSave();
+    _startGame();
     applied = { ...current };
     hasUnapplied = false;
     document.getElementById('apply-btn').classList.remove('changed');
-    showStatus('Game reloaded with new config');
+    showStatus('Config applied — game restarted');
+    closePanel();
 }
 
 function autoSave() {
@@ -429,15 +2501,11 @@ function autoSave() {
 
 function updateUIFromCurrent() {
     for (const section of PARAM_SECTIONS) {
-        for (const [key, , min, max, step] of section.params) {
-            const slider = document.getElementById('slider-' + key);
+        for (const [key, , min, max] of section.params) {
+            const slider   = document.getElementById('slider-' + key);
             const numInput = document.getElementById('num-' + key);
-            if (slider) {
-                slider.value = Math.max(min, Math.min(max, current[key]));
-            }
-            if (numInput) {
-                numInput.value = current[key];
-            }
+            if (slider)   slider.value   = Math.max(min, Math.min(max, current[key]));
+            if (numInput) numInput.value = current[key];
         }
     }
 }
@@ -445,19 +2513,16 @@ function updateUIFromCurrent() {
 function exportConfig() {
     const json = JSON.stringify(current, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'drift-config.json';
-    a.click();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'drift-config.json'; a.click();
     URL.revokeObjectURL(url);
-    showStatus('Config exported as drift-config.json');
+    showStatus('Exported drift-config.json');
 }
 
 function importConfig() {
     const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
+    input.type = 'file'; input.accept = '.json';
     input.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -472,7 +2537,7 @@ function importConfig() {
                 markChanged();
                 showStatus('Imported ' + file.name + ' — click Apply to use');
             } catch (err) {
-                showStatus('Error: invalid JSON - ' + err.message);
+                showStatus('Error: invalid JSON — ' + err.message);
             }
         };
         reader.readAsText(file);
@@ -492,89 +2557,6 @@ function showStatus(msg) {
     el.textContent = msg;
     setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
 }
-
-// ============================================================
-// KEYBOARD FORWARDING
-// ============================================================
-// Forward keyboard events from the parent page into the iframe
-// so the game receives input even when panel has focus
-const GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Space']);
-
-document.addEventListener('keydown', (e) => {
-    if (GAME_KEYS.has(e.code)) {
-        // Don't forward if user is typing in a number input
-        if (e.target.tagName === 'INPUT') return;
-        e.preventDefault();
-        forwardKeyEvent('keydown', e);
-    }
-});
-
-document.addEventListener('keyup', (e) => {
-    if (GAME_KEYS.has(e.code)) {
-        if (e.target.tagName === 'INPUT') return;
-        forwardKeyEvent('keyup', e);
-    }
-});
-
-function forwardKeyEvent(type, original) {
-    const iframe = document.getElementById('game-frame');
-    try {
-        const evt = new KeyboardEvent(type, {
-            code: original.code,
-            key: original.key,
-            bubbles: true,
-            cancelable: true,
-        });
-        iframe.contentDocument.dispatchEvent(evt);
-    } catch (e) { /* cross-origin */ }
-}
-
-// ============================================================
-// RESIZABLE PANEL
-// ============================================================
-const handle = document.getElementById('resize-handle');
-const panel = document.getElementById('panel');
-let resizing = false;
-
-handle.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    resizing = true;
-    handle.classList.add('active');
-    document.body.style.cursor = 'col-resize';
-    // Prevent iframe from capturing mouse during resize
-    document.getElementById('game-frame').style.pointerEvents = 'none';
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (!resizing) return;
-    const newWidth = Math.max(200, Math.min(600, e.clientX));
-    panel.style.width = newWidth + 'px';
-});
-
-document.addEventListener('mouseup', () => {
-    if (!resizing) return;
-    resizing = false;
-    handle.classList.remove('active');
-    document.body.style.cursor = '';
-    document.getElementById('game-frame').style.pointerEvents = '';
-});
-
-// ============================================================
-// IFRAME LOAD
-// ============================================================
-const iframe = document.getElementById('game-frame');
-
-// On first load, apply saved config if it differs from defaults
-const hasCustomConfig = Object.keys(DEFAULTS).some(k => current[k] !== DEFAULTS[k]);
-if (hasCustomConfig) {
-    const hash = '#' + encodeURIComponent(JSON.stringify(current));
-    iframe.src = 'index.html' + hash;
-}
-
-iframe.addEventListener('load', () => {
-    applied = { ...current };
-    showStatus('Connected to game');
-});
 
 buildUI();
 </script>
