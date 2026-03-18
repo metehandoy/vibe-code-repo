@@ -156,7 +156,6 @@
             this.segmentIndex = 0;
             this.difficulty = 0;
             this.backWall = null;
-            this.startWall = null;
             // Agent physics reset
             this.agentX = startX;
             this.agentY = startY;
@@ -393,7 +392,6 @@
                     angle: removed.angle,
                     width: removed.width + 40
                 };
-                this.startWall = null; // backWall now covers the rear; startWall no longer needed
                 this.minSegIdx = this.spine.length > 0 ? this.spine[0].index : removed.index;
             }
             // Generate ahead
@@ -1272,18 +1270,7 @@
                 this._drawNeonLine(pts, '#ff3366', 4);
             }
 
-            // Start wall barrier (red glow behind starting point)
-            if (track.startWall) {
-                const sw = track.startWall;
-                const nx = Math.cos(sw.angle + Math.PI / 2);
-                const ny = Math.sin(sw.angle + Math.PI / 2);
-                const hw = sw.width / 2;
-                const pts = [
-                    { x: sw.x + nx * hw - camX, y: sw.y + ny * hw - camY },
-                    { x: sw.x - nx * hw - camX, y: sw.y - ny * hw - camY }
-                ];
-                this._drawNeonLine(pts, '#ff3366', 4);
-            }
+
         }
 
         _drawNeonLine(points, color, width) {
@@ -1620,10 +1607,10 @@
             this.timeFlash = 0;
             this.diedFromWall = false;
 
-            // Place a wall behind the starting point so user can't turn back
+            // Place a back wall behind the starting point so the player can't turn back
             const startSeg = this.track.spine[0];
             if (startSeg) {
-                this.track.startWall = {
+                this.track.backWall = {
                     x: startSeg.x,
                     y: startSeg.y,
                     angle: startSeg.angle,
@@ -1727,25 +1714,6 @@
             }
         }
 
-        checkStartWallCollision() {
-            const sw = this.track.startWall;
-            if (!sw) return;
-            const arrow = this.arrow;
-            const fwdX = Math.cos(sw.angle);
-            const fwdY = Math.sin(sw.angle);
-            const dx = arrow.x - sw.x;
-            const dy = arrow.y - sw.y;
-            const along = dx * fwdX + dy * fwdY;
-            const nx = -fwdY;
-            const ny = fwdX;
-            const lateral = Math.abs(dx * nx + dy * ny);
-            if (along < 0 && lateral < sw.width / 2) {
-                this.particles.emit(sw.x, sw.y, 15, '#ff3366', 1.5, 3, 25);
-                this.audio.wallHit();
-                this.diedFromWall = true;
-                this.die();
-            }
-        }
 
         updatePlaying(dt60) {
             const dir = this.input.getDir();
@@ -1786,8 +1754,6 @@
             this.checkBackWallCollision();
             if (this.state !== STATE.PLAYING) return;
 
-            // Start wall collision (wall behind starting point)
-            this.checkStartWallCollision();
             if (this.state !== STATE.PLAYING) return;
 
             // Distance tracking: convert segments to meters
