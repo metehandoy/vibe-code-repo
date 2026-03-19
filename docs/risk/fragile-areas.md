@@ -38,13 +38,13 @@ When a token is collected, `t.collected = true` (tokens.js:65) but it stays in t
 Same pattern for hazards: `h.hit = true` (hazards.js:58) but stays in array.
 
 **`diedFromWall` flag:**
-Set to `true` before `die()` on wall hit (game.js:144), back wall hit (game.js:169), and death hazard (game.js:262). Checked in `die()` to set `deathCause` (game.js:92). However, `diedFromWall` is set `true` for death hazards too (line 262), even though those aren't wall hits. This means a death hazard collision shows "WRECKED" instead of a more specific message. **Likely a bug** — should be `this.diedFromWall = false` before `this.die()` at line 263, or the death hazard block should not set the flag.
+Set to `true` before `die()` on wall hit (game.js:144) and back wall hit (game.js:169). Death hazards set it to `false` (game.js:261) so they correctly produce `deathCause = 'other'`. Checked in `die()` to set `deathCause` (game.js:92). **Fixed** — previously death hazards incorrectly set `diedFromWall = true`, causing "WRECKED" to display instead of a hazard-specific message.
 
 **`arrow.alive` — never used:**
 Set to `true` in `reset()` (arrow.js:17), never checked anywhere. If code were added that checks `arrow.alive`, it would always be true even after death. Vestigial from a removed feature.
 
-**Track `minSegIdx` falsy-check:**
-`game.js:201` — `if (this.track.minSegIdx)`. If `minSegIdx` is 0 (which it is when no segments have been trimmed), this evaluates to false, skipping culling. In practice, culling only matters after segments *have* been trimmed (at which point minSegIdx > 0), so this is not a current bug. But it's fragile — if the initial segment index were ever 0 and segments were trimmed from a different start, the check would fail.
+**Track `minSegIdx` check:**
+`game.js:202` — `if (this.track.minSegIdx > 0)`. **Fixed** — previously used a falsy check (`if (this.track.minSegIdx)`) which would skip culling when `minSegIdx === 0`. Now uses an explicit `> 0` comparison.
 
 ### 4.4 Missing Null/Bounds Checks
 
@@ -71,7 +71,7 @@ Set to `true` in `reset()` (arrow.js:17), never checked anywhere. If code were a
 **NaN propagation:**
 - `Math.atan2(0, 0)` returns 0. Used in `track.js:222` for `segAngle`. If consecutive center positions are identical (`dx=0, dy=0`), the segment angle would be 0. This can happen if the agent stops moving (speedMult = 0), but the agent always moves at `CFG.SEGMENT_LENGTH` per step (track.js:205-206), so dx/dy are never both zero.
 - `Math.pow(driftAmount, CFG.DRIFT_DRAG_EXP)` (arrow.js:101): `driftAmount` is always ≥ 0 (`Math.abs()` result). `DRIFT_DRAG_EXP` is 2.0. `Math.pow(0, 2) = 0`, `Math.pow(positive, 2) = positive`. No NaN risk.
-- `parseInt(localStorage.getItem('driftArrowHigh2') || '0', 10)` (game.js:20): If localStorage returns invalid data, `parseInt("garbage", 10)` returns NaN. The `|| '0'` fallback handles null/undefined but not corrupt values. NaN would propagate to `this.highScore`, causing `score > this.highScore` to be false (NaN comparison). High score would display as "NaN m" in the HUD. **Low risk** — requires manual localStorage corruption.
+- `parseInt(localStorage.getItem('driftArrowHigh2') || '0', 10)` (game.js:21): Now wrapped in try-catch — **fixed**. If localStorage throws (e.g., Safari private mode), `highScore` defaults to 0. If localStorage returns invalid data, `parseInt("garbage", 10)` returns NaN. The `|| '0'` fallback handles null/undefined but not corrupt values. **Low risk** — requires manual localStorage corruption.
 
 **`normalizeAngle` infinite loop risk:**
 `utils.js:44-48` uses while-loops to normalize: `while (a > Math.PI) a -= Math.PI * 2`. If `a` is `Infinity` or `NaN`, this loops forever. However, `normalizeAngle` is only called via `angleDiff()` which subtracts two finite angles. No risk of infinite input in practice.

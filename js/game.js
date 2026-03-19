@@ -17,7 +17,11 @@ class Game {
         this.tokens = new TimeTokenManager();
         this.hazards = new HazardManager();
         this.state = STATE.MENU;
-        this.highScore = parseInt(localStorage.getItem('driftArrowHigh2') || '0', 10);
+        try {
+            this.highScore = parseInt(localStorage.getItem('driftArrowHigh2') || '0', 10);
+        } catch (e) {
+            this.highScore = 0;
+        }
         this.distance = 0;
         this.timeLeft = 0;
         this.isNewHigh = false;
@@ -99,7 +103,7 @@ class Game {
         if (score > this.highScore) {
             this.highScore = score;
             this.isNewHigh = true;
-            localStorage.setItem('driftArrowHigh2', String(this.highScore));
+            try { localStorage.setItem('driftArrowHigh2', String(this.highScore)); } catch (e) {}
         }
     }
 
@@ -198,7 +202,7 @@ class Game {
         this.track.update(this.arrow.currentSegIdx);
 
         // Cull tokens and hazards on deleted segments
-        if (this.track.minSegIdx) {
+        if (this.track.minSegIdx > 0) {
             this.tokens.cullBefore(this.track.minSegIdx);
             this.hazards.cullBefore(this.track.minSegIdx);
         }
@@ -209,8 +213,6 @@ class Game {
 
         // Back wall collision (barrier at deleted track)
         this.checkBackWallCollision();
-        if (this.state !== STATE.PLAYING) return;
-
         if (this.state !== STATE.PLAYING) return;
 
         // Distance tracking: convert segments to meters
@@ -259,7 +261,7 @@ class Game {
         if (hazardHit === 'death') {
             this.particles.emit(this.arrow.x, this.arrow.y, 25, '#ff2244', 1.5, 4, 35);
             this.audio.wallHit();
-            this.diedFromWall = true;
+            this.diedFromWall = false;
             this.die();
             return;
         } else if (hazardHit === 'slow') {

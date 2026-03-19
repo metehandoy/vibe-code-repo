@@ -62,7 +62,7 @@ Game polls input each frame: `input.getDir()` (game.js:176), `input.isBraking()`
 
 `game.js:201-204` — when `track.minSegIdx` is truthy, calls `tokens.cullBefore()` and `hazards.cullBefore()`.
 
-**Coupling: Medium.** Track's `minSegIdx` is set as a side effect of `track.update()`. The falsy check `if (this.track.minSegIdx)` would fail to cull if `minSegIdx` is 0 — see fragile areas.
+**Coupling: Medium.** Track's `minSegIdx` is set as a side effect of `track.update()`. **Fixed** — the check is now `if (this.track.minSegIdx > 0)` instead of a falsy guard.
 
 ### Boundary 10: Config (CFG) → Everything
 

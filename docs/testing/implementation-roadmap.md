@@ -46,7 +46,7 @@
 2. **Spawn callback** (`tests/integration/spawning.test.js`): I-SPN-01 through I-SPN-05, I-CB-01, I-CB-02. Requires real Track + TokenManager + HazardManager.
 3. **Collision integration** (`tests/integration/collision.test.js`): I-WALL-01 through I-WALL-05. Real Track + Arrow + Game.checkWallCollision().
 4. **Culling chain** (`tests/integration/culling.test.js`): I-CULL-01 through I-CULL-04. Real Track + TokenManager + HazardManager + Game.updatePlaying().
-5. **Death flag chain** (`tests/integration/death.test.js`): I-DEATH-01 through I-DEATH-04. Documents the `diedFromWall` bug.
+5. **Death flag chain** (`tests/integration/death.test.js`): I-DEATH-01 through I-DEATH-04. The `diedFromWall` bug has been **fixed**.
 6. **Audio lifecycle** (`tests/integration/audio.test.js`): I-AUD-01 through I-AUD-05. Mocked AudioContext.
 
 **Deliverable:** ~25 integration tests covering all 9 integration boundaries from the risk map.
