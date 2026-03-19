@@ -43,7 +43,7 @@ Identified risks, complexity hotspots, and fragile areas.
   - [**unit-tests-input.md**](testing/unit-tests-input.md) — Input manager: getDir, isBraking, consumeTap, touch handling
   - [**unit-tests-particles.md**](testing/unit-tests-particles.md) — Particles: emit, update
   - [**unit-tests-audio.md**](testing/unit-tests-audio.md) — Audio: _ensure, startDrift/stopDrift lifecycle
-  - [**unit-tests-config.md**](testing/unit-tests-config.md) — Config: CFG defaults, falsy guard bug, _formatDist
+  - [**unit-tests-config.md**](testing/unit-tests-config.md) — Config: CFG defaults, falsy guard (**fixed**), _formatDist
 - [**integration-tests.md**](testing/integration-tests.md) — 8 integration test suites covering system boundaries
 - [**mobile-tests.md**](testing/mobile-tests.md) — Touch, viewport, performance, lifecycle, audio, browser matrix tests
 - [**e2e-tests.md**](testing/e2e-tests.md) — 10 end-to-end scenarios (full gameplay, wall death, tokens, hazards, stress)

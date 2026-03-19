@@ -26,7 +26,7 @@ Tests that should run on **every commit** via CI. Each earns this status because
 | U-TOK-SPN-01, U-TOK-SPN-02 | Token spawn zone and gap | If broken, tokens flood or disappear, breaking game pacing. |
 | U-HAZ-SPN-01 | Hazard no-spawn zone | If broken, hazards appear immediately at game start = unfair deaths. |
 | U-ARR-DB-03 | Drift-brake activates after 150ms | If delay breaks, drift-brake either never activates or activates instantly. |
-| U-CFG-02 | Falsy CFG guard bug | Documents known bug. Regression test ensures it's not silently "fixed" in a way that breaks other defaults. |
+| U-CFG-02 | Falsy CFG guard (**fixed**) | Guards the `== null` checks in `tokens.js`. Bug was fixed (changed `!CFG.X` to `CFG.X == null`). Regression test ensures values set to 0 are respected, not treated as missing. |
 | I-CULL-01 | Segment culling removes old tokens/hazards | If broken, arrays grow unbounded → memory leak → frame rate degradation. |
 | I-SPN-01 | Initial track has tokens and hazards | If broken, first 30s of gameplay has no pickups → boring + impossible (timer runs out). |
 
