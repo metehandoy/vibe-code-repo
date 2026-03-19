@@ -25,8 +25,10 @@
 │   └── sync-dev.py
 ├── tests/
 │   └── collision-tests.html
+├── dist/
+│   └── mobile.html      (auto-generated)
+├── docs/                (documentation, split by topic)
 ├── index.html
-├── mobile.html          (auto-generated)
 ├── dev.html             (auto-generated game section)
 ├── CLAUDE.md
 └── README.md

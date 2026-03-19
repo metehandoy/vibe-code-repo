@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 INDEX = ROOT / 'index.html'
-MOBILE = ROOT / 'mobile.html'
+MOBILE = ROOT / 'dist' / 'mobile.html'
 
 # Ordered list of JS files — must match the <script> tag order in index.html
 JS_FILES = [

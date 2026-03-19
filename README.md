@@ -12,7 +12,7 @@ A neon synthwave endless drifting game. Control an arrow through a procedurally 
 6. Avoid **red tokens** — they slow you down
 7. Don't hit the walls or go backwards
 
-**Mobile?** Open `mobile.html` directly — it's a single self-contained file that works with `file://` and needs no server.
+**Mobile?** Open `dist/mobile.html` directly — it's a single self-contained file that works with `file://` and needs no server.
 
 ## Controls
 
@@ -41,7 +41,6 @@ game with your changes. Settings are saved to `localStorage`.
 ## Project Structure
 /
 ├── index.html              # Game shell — loads JS modules via  tags
-├── mobile.html             # Single-file build (auto-generated, works offline)
 ├── dev.html                # Dev tuner — game embedded + overlay panel
 ├── js/
 │   ├── config.js           # CFG parameters
@@ -56,10 +55,18 @@ game with your changes. Settings are saved to `localStorage`.
 │   ├── renderer.js         # Canvas 2D rendering
 │   ├── game.js             # Main game loop + state machine
 │   └── bootstrap.js        # Canvas init + game start
+├── dist/
+│   └── mobile.html         # Single-file build (auto-generated, works offline)
+├── docs/
+│   ├── README.md           # Documentation index
+│   ├── survey.md           # Repository survey
+│   ├── behavior/           # Runtime behavior analysis (8 files)
+│   ├── risk/               # Risk & complexity analysis (6 files)
+│   └── testing/            # Testing plan (17 files)
 ├── tests/
 │   └── collision-tests.html  # Headless collision/geometry tests
 ├── scripts/
 │   ├── sync-dev.py         # Syncs JS modules into dev.html
-│   └── build-mobile.py     # Merges JS modules into mobile.html
+│   └── build-mobile.py     # Merges JS modules into dist/mobile.html
 └── .github/workflows/
     └── ci.yml              # CI: collision tests + HTML validation

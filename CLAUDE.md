@@ -2,12 +2,11 @@
 
 ## Project Overview
 
-Drift Arrow is a neon synthwave endless drifting browser game. The player controls an arrow through a procedurally generated track, collecting time tokens, avoiding hazards, and surviving as long as possible. Game logic is split into modular JS files under `js/`, with a build script that merges them into a single `mobile.html` for zero-dependency mobile deployment.
+Drift Arrow is a neon synthwave endless drifting browser game. The player controls an arrow through a procedurally generated track, collecting time tokens, avoiding hazards, and surviving as long as possible. Game logic is split into modular JS files under `js/`, with a build script that merges them into a single `dist/mobile.html` for zero-dependency mobile deployment.
 
 ## Repository Structure
 /
 ├── index.html              # Game shell — loads JS modules via  tags
-├── mobile.html             # Single-file build (auto-generated, works offline)
 ├── dev.html                # Dev tuner — game embedded + overlay panel
 ├── js/
 │   ├── config.js           # CFG parameters + URL hash override logic
@@ -22,16 +21,24 @@ Drift Arrow is a neon synthwave endless drifting browser game. The player contro
 │   ├── renderer.js         # Canvas 2D rendering (GameRenderer class)
 │   ├── game.js             # Main loop + state machine (Game class + STATE enum)
 │   └── bootstrap.js        # Canvas init, exposes CFG, starts Game
+├── dist/
+│   └── mobile.html         # Single-file build (auto-generated, works offline)
+├── docs/
+│   ├── README.md           # Documentation index with links to all docs
+│   ├── survey.md           # Repository survey (tech stack, file catalog)
+│   ├── behavior/           # Runtime behavior analysis (8 files by system)
+│   ├── risk/               # Risk & complexity analysis (6 files by category)
+│   └── testing/            # Testing plan (~200 specs, 17 files by system/type)
 ├── tests/
 │   └── collision-tests.html  # Headless collision/geometry tests (imports js/ modules)
 ├── scripts/
 │   ├── sync-dev.py         # Concatenates js/.js into dev.html with patches
-│   └── build-mobile.py     # Merges js/.js into single mobile.html
+│   └── build-mobile.py     # Merges js/.js into single dist/mobile.html
 ├── .github/workflows/
 │   └── ci.yml              # CI: collision tests + file validation
 ├── README.md               # Player-facing documentation
 └── CLAUDE.md               # This file
-There is no build system, no package manager, no bundler. The game runs by opening `index.html` via a local server (needed for `<script src>` loading), or by opening `mobile.html` directly in a browser (works with `file://`).
+There is no build system, no package manager, no bundler. The game runs by opening `index.html` via a local server (needed for `<script src>` loading), or by opening `dist/mobile.html` directly in a browser (works with `file://`).
 
 ## Architecture
 
@@ -70,7 +77,7 @@ Key parameter groups:
 ## Development Workflow
 
 ### Running the Game
-Open `index.html` via a local server (`npx serve .`, Python `http.server`, etc.) or open `mobile.html` directly in any browser.
+Open `index.html` via a local server (`npx serve .`, Python `http.server`, etc.) or open `dist/mobile.html` directly in any browser.
 
 ### Tuning Parameters
 Open `dev.html`. The game runs full-screen; the dev panel is a fixed overlay:
@@ -84,7 +91,7 @@ Edit the JS files in `js/`. Refresh the browser to see changes.
 
 After committing:
 - **Pre-commit hook** runs `scripts/sync-dev.py` to update `dev.html` from `js/*.js` and stages it
-- **Post-commit hook** runs `scripts/build-mobile.py` to regenerate `mobile.html`
+- **Post-commit hook** runs `scripts/build-mobile.py` to regenerate `dist/mobile.html`
 
 To run manually without committing:
 python3 scripts/sync-dev.py
@@ -101,7 +108,7 @@ The markers in `dev.html` that delimit the game code section:
 // === GAME CODE BEGIN (auto-synced from index.html) ===
 // === GAME CODE END ===
 ### How build-mobile.py Works
-It reads `index.html` for the HTML shell, reads all `js/*.js` files in order, strips per-file `'use strict'` directives, and combines everything into a single `mobile.html` with one inline `<script>` block. This file has zero external dependencies and works with `file://`.
+It reads `index.html` for the HTML shell, reads all `js/*.js` files in order, strips per-file `'use strict'` directives, and combines everything into a single `dist/mobile.html` with one inline `<script>` block. This file has zero external dependencies and works with `file://`.
 
 ### Running Tests
 Tests are in `tests/collision-tests.html`. They import `js/config.js`, `js/utils.js`, and `js/tokens.js` directly and test collision geometry, token collection, hazard detection, and wall hits. CI runs them headlessly via Puppeteer.
@@ -149,7 +156,7 @@ Tests are in `tests/collision-tests.html`. They import `js/config.js`, `js/utils
 
 1. **Modular JS files**: Game code lives in `js/*.js`. Each file is one logical unit (one class or set of related functions). Files share the global scope and are loaded in dependency order by `index.html`.
 
-2. **mobile.html is auto-generated**: Never edit `mobile.html` directly — it is rebuilt by `scripts/build-mobile.py` on every commit via the post-commit hook.
+2. **dist/mobile.html is auto-generated**: Never edit `dist/mobile.html` directly — it is rebuilt by `scripts/build-mobile.py` on every commit via the post-commit hook.
 
 3. **Sync dev.html after editing JS files**: Run `python3 scripts/sync-dev.py` or just commit — the pre-commit hook does it automatically.
 
@@ -159,7 +166,7 @@ Tests are in `tests/collision-tests.html`. They import `js/config.js`, `js/utils
 
 6. **Performance matters**: This is a 60fps game loop. Avoid allocations in hot paths (`update` and `render` methods). Reuse objects where possible.
 
-7. **Mobile-first**: Touch input is the primary control method. Always verify changes work on mobile viewports. Use `mobile.html` for testing on actual devices.
+7. **Mobile-first**: Touch input is the primary control method. Always verify changes work on mobile viewports. Use `dist/mobile.html` for testing on actual devices.
 
 8. **Config changes**: Prefer adjusting `CFG` values over changing physics code when tuning game feel.
 
