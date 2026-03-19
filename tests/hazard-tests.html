@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drift Arrow – Hazard Manager Tests</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+        .pass { color: #0f0; }
+        .fail { color: #f33; font-weight: bold; }
+        h2 { color: #0ff; margin-top: 24px; }
+        .summary { margin-top: 20px; padding: 10px; border: 2px solid; font-size: 16px; }
+        .summary.all-pass { border-color: #0f0; }
+        .summary.has-fail { border-color: #f33; }
+    </style>
+</head>
+<body>
+<h1>Drift Arrow – Hazard Manager Tests</h1>
+<div id="results"></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/tokens.js"></script>
+<script src="../js/hazards.js"></script>
+<script>
+'use strict';
+
+let totalTests = 0;
+let passedTests = 0;
+const resultsEl = document.getElementById('results');
+
+function section(name) {
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    resultsEl.appendChild(h2);
+}
+
+function assert(condition, description) {
+    totalTests++;
+    const div = document.createElement('div');
+    if (condition) {
+        passedTests++;
+        div.className = 'pass';
+        div.textContent = `  PASS: ${description}`;
+    } else {
+        div.className = 'fail';
+        div.textContent = `  FAIL: ${description}`;
+    }
+    resultsEl.appendChild(div);
+}
+
+function assertApprox(actual, expected, tolerance, description) {
+    assert(Math.abs(actual - expected) < tolerance, `${description} (got ${actual.toFixed(6)}, expected ~${expected})`);
+}
+
+// Helper: create hazard manager with a hazard placed at a known position
+function createHazardAt(x, y, type) {
+    const hm = new HazardManager();
+    hm.hazards.push({ x, y, segIdx: 100, type, hit: false });
+    return hm;
+}
+
+// Arrow at origin facing right for collision checks
+const AX = 0, AY = 0, AF = 0;
+const TIP_X = CFG.ARROW_LENGTH * 0.6;
+
+// ============================================================
+// TEST: HazardManager reset
+// ============================================================
+section('HazardManager Reset');
+
+(() => {
+    const hm = new HazardManager();
+    hm.hazards.push({ x: 1, y: 2, segIdx: 5, type: HAZARD.SLOW, hit: false });
+    hm.effectStack = -2;
+    hm.effectTimer = 100;
+    hm.lastSpawnSeg = 50;
+    hm.reset();
+    assert(hm.hazards.length === 0, 'Reset clears hazards');
+    assert(hm.effectStack === 0, 'Reset clears effectStack');
+    assert(hm.effectTimer === 0, 'Reset clears effectTimer');
+    assert(hm.lastSpawnSeg === 0, 'Reset clears lastSpawnSeg');
+})();
+
+// ============================================================
+// TEST: checkCollision returns correct type strings
+// ============================================================
+section('Collision Return Types');
+
+(() => {
+    // Slow hazard at arrow tip
+    const hm1 = createHazardAt(TIP_X, 0, HAZARD.SLOW);
+    const result1 = hm1.checkCollision(AX, AY, AF);
+    assert(result1 === 'slow', 'Slow hazard returns "slow"');
+
+    // Speed hazard at arrow tip
+    const hm2 = createHazardAt(TIP_X, 0, HAZARD.SPEED);
+    const result2 = hm2.checkCollision(AX, AY, AF);
+    assert(result2 === 'speed', 'Speed hazard returns "speed"');
+
+    // Death hazard at arrow tip
+    const hm3 = createHazardAt(TIP_X, 0, HAZARD.DEATH);
+    const result3 = hm3.checkCollision(AX, AY, AF);
+    assert(result3 === 'death', 'Death hazard returns "death"');
+
+    // No hazard nearby
+    const hm4 = createHazardAt(500, 500, HAZARD.SLOW);
+    const result4 = hm4.checkCollision(AX, AY, AF);
+    assert(result4 === null, 'No nearby hazard returns null');
+
+    // Already-hit hazard is skipped
+    const hm5 = createHazardAt(TIP_X, 0, HAZARD.SLOW);
+    hm5.hazards[0].hit = true;
+    const result5 = hm5.checkCollision(AX, AY, AF);
+    assert(result5 === null, 'Already-hit hazard returns null');
+})();
+
+// ============================================================
+// TEST: Effect stack — slow/speed cancellation
+// U-HAZ-COL-04/05 critical
+// ============================================================
+section('Effect Stack Cancellation');
+
+(() => {
+    // Slow then speed → cancels slow
+    const hm = new HazardManager();
+    hm.hazards.push({ x: TIP_X, y: 0, segIdx: 100, type: HAZARD.SLOW, hit: false });
+    hm.checkCollision(AX, AY, AF);
+    assert(hm.effectStack === -1, 'After slow: effectStack = -1');
+    assert(hm.effectTimer === CFG.HAZARD_EFFECT_DUR, 'After slow: timer set');
+
+    // Add speed hazard
+    hm.hazards.push({ x: TIP_X, y: 0, segIdx: 101, type: HAZARD.SPEED, hit: false });
+    hm.checkCollision(AX, AY, AF);
+    assert(hm.effectStack === 0, 'Speed cancels slow: effectStack = 0');
+    assert(hm.effectTimer === 0, 'After cancellation: timer = 0');
+
+    // Speed then slow → cancels speed
+    const hm2 = new HazardManager();
+    hm2.hazards.push({ x: TIP_X, y: 0, segIdx: 100, type: HAZARD.SPEED, hit: false });
+    hm2.checkCollision(AX, AY, AF);
+    assert(hm2.effectStack === 1, 'After speed: effectStack = 1');
+
+    hm2.hazards.push({ x: TIP_X, y: 0, segIdx: 101, type: HAZARD.SLOW, hit: false });
+    hm2.checkCollision(AX, AY, AF);
+    assert(hm2.effectStack === 0, 'Slow cancels speed: effectStack = 0');
+    assert(hm2.effectTimer === 0, 'After cancellation: timer = 0');
+})();
+
+// ============================================================
+// TEST: Effect stacking
+// ============================================================
+section('Effect Stacking');
+
+(() => {
+    // Double slow stacks
+    const hm = new HazardManager();
+    hm.hazards.push(
+        { x: TIP_X, y: 0, segIdx: 100, type: HAZARD.SLOW, hit: false },
+        { x: TIP_X, y: 1, segIdx: 101, type: HAZARD.SLOW, hit: false }
+    );
+    hm.checkCollision(AX, AY, AF);
+    hm.checkCollision(AX, AY, AF);
+    assert(hm.effectStack === -2, 'Double slow: effectStack = -2');
+
+    // Cancel one with speed, still slow
+    hm.hazards.push({ x: TIP_X, y: 0, segIdx: 102, type: HAZARD.SPEED, hit: false });
+    hm.checkCollision(AX, AY, AF);
+    assert(hm.effectStack === -1, 'Cancel one slow with speed: effectStack = -1');
+    assert(hm.effectTimer > 0, 'Timer still running after partial cancel');
+
+    // Double speed stacks
+    const hm2 = new HazardManager();
+    hm2.hazards.push(
+        { x: TIP_X, y: 0, segIdx: 100, type: HAZARD.SPEED, hit: false },
+        { x: TIP_X, y: 1, segIdx: 101, type: HAZARD.SPEED, hit: false }
+    );
+    hm2.checkCollision(AX, AY, AF);
+    hm2.checkCollision(AX, AY, AF);
+    assert(hm2.effectStack === 2, 'Double speed: effectStack = 2');
+})();
+
+// ============================================================
+// TEST: getSpeedMult (U-HAZ-GSM-04 critical: returns 1 when expired)
+// ============================================================
+section('getSpeedMult');
+
+(() => {
+    // Neutral state
+    const hm = new HazardManager();
+    assertApprox(hm.getSpeedMult(), 1, 0.001, 'Neutral: getSpeedMult = 1');
+
+    // Slow effect active
+    hm.effectStack = -1;
+    hm.effectTimer = 100;
+    assertApprox(hm.getSpeedMult(), CFG.HAZARD_SLOW_MULT, 0.001,
+        'Slow active: getSpeedMult = HAZARD_SLOW_MULT');
+
+    // Speed effect active
+    hm.effectStack = 1;
+    hm.effectTimer = 100;
+    assertApprox(hm.getSpeedMult(), CFG.HAZARD_SPEED_MULT, 0.001,
+        'Speed active: getSpeedMult = HAZARD_SPEED_MULT');
+
+    // CRITICAL: Timer expired → returns 1 regardless of stack
+    hm.effectStack = -2;
+    hm.effectTimer = 0;
+    assertApprox(hm.getSpeedMult(), 1, 0.001,
+        'Timer expired: getSpeedMult = 1 even with effectStack=-2');
+
+    hm.effectStack = 3;
+    hm.effectTimer = -5;
+    assertApprox(hm.getSpeedMult(), 1, 0.001,
+        'Negative timer: getSpeedMult = 1 even with effectStack=3');
+
+    // effectStack = 0 → returns 1
+    hm.effectStack = 0;
+    hm.effectTimer = 100;
+    assertApprox(hm.getSpeedMult(), 1, 0.001,
+        'effectStack=0: getSpeedMult = 1 even with timer > 0');
+})();
+
+// ============================================================
+// TEST: getActiveEffect
+// ============================================================
+section('getActiveEffect');
+
+(() => {
+    const hm = new HazardManager();
+    assert(hm.getActiveEffect() === null, 'Neutral: no active effect');
+
+    hm.effectStack = -1;
+    hm.effectTimer = 50;
+    const slowEffect = hm.getActiveEffect();
+    assert(slowEffect !== null && slowEffect.type === 'slow', 'Slow effect active');
+    assert(slowEffect.timer === 50, 'Slow effect has correct timer');
+
+    hm.effectStack = 2;
+    hm.effectTimer = 30;
+    const speedEffect = hm.getActiveEffect();
+    assert(speedEffect !== null && speedEffect.type === 'speed', 'Speed effect active');
+
+    hm.effectStack = -1;
+    hm.effectTimer = 0;
+    assert(hm.getActiveEffect() === null, 'Timer expired: no active effect');
+
+    hm.effectStack = 0;
+    hm.effectTimer = 100;
+    assert(hm.getActiveEffect() === null, 'Stack=0: no active effect');
+})();
+
+// ============================================================
+// TEST: Timer expiry via update()
+// ============================================================
+section('Timer Expiry');
+
+(() => {
+    const hm = new HazardManager();
+    hm.effectStack = -2;
+    hm.effectTimer = 10;
+
+    // Update 5 frames
+    hm.update(5);
+    assert(hm.effectTimer === 5, 'Timer decrements by dt60');
+    assert(hm.effectStack === -2, 'Stack unchanged while timer > 0');
+
+    // Update past zero
+    hm.update(10);
+    assert(hm.effectTimer === 0, 'Timer clamped to 0');
+    assert(hm.effectStack === 0, 'Stack cleared when timer expires');
+
+    // Timer stays at 0 after expiry
+    hm.update(10);
+    assert(hm.effectTimer === 0, 'Timer stays at 0');
+    assert(hm.effectStack === 0, 'Stack stays at 0');
+})();
+
+// ============================================================
+// TEST: cullBefore
+// ============================================================
+section('Hazard Culling');
+
+(() => {
+    const hm = new HazardManager();
+    hm.hazards.push(
+        { x: 0, y: 0, segIdx: 10, type: HAZARD.SLOW, hit: false },
+        { x: 0, y: 0, segIdx: 50, type: HAZARD.SPEED, hit: false },
+        { x: 0, y: 0, segIdx: 100, type: HAZARD.DEATH, hit: false }
+    );
+    hm.cullBefore(50);
+    assert(hm.hazards.length === 2, 'Cull removes hazards before minSegIdx');
+    assert(hm.hazards[0].segIdx === 50, 'Hazard at minSegIdx kept');
+    assert(hm.hazards[1].segIdx === 100, 'Hazard after minSegIdx kept');
+
+    hm.cullBefore(200);
+    assert(hm.hazards.length === 0, 'Cull all when minSegIdx > all');
+})();
+
+// ============================================================
+// TEST: spawnOnSegment
+// ============================================================
+section('Hazard Spawn Rules');
+
+(() => {
+    const hm = new HazardManager();
+
+    // Too early — no spawn
+    const earlySeg = { index: 10, x: 0, y: 0, angle: 0, width: 100 };
+    // Force Math.random to always pass
+    const origRandom = Math.random;
+    Math.random = () => 0;
+    hm.spawnOnSegment(earlySeg, 0.5);
+    assert(hm.hazards.length === 0,
+        'No spawn in no-spawn zone (index < HAZARD_NO_SPAWN_ZONE)');
+
+    // After no-spawn zone, with guaranteed random
+    const validSeg = { index: CFG.HAZARD_NO_SPAWN_ZONE + 1, x: 50, y: 50, angle: 0, width: 100 };
+    hm.spawnOnSegment(validSeg, 0.5);
+    assert(hm.hazards.length === 1, 'Spawn after no-spawn zone');
+
+    // Min gap enforcement
+    const tooCloseSeg = { index: CFG.HAZARD_NO_SPAWN_ZONE + 2, x: 50, y: 50, angle: 0, width: 100 };
+    hm.spawnOnSegment(tooCloseSeg, 0.5);
+    assert(hm.hazards.length === 1,
+        'No spawn within HAZARD_MIN_GAP of last spawn');
+
+    // After gap
+    const afterGapSeg = {
+        index: CFG.HAZARD_NO_SPAWN_ZONE + 1 + CFG.HAZARD_MIN_GAP + 1,
+        x: 100, y: 100, angle: 0, width: 100
+    };
+    hm.spawnOnSegment(afterGapSeg, 0.5);
+    assert(hm.hazards.length === 2, 'Spawn allowed after min gap');
+
+    Math.random = origRandom;
+})();
+
+// ============================================================
+// TEST: Effect timer resets on same-type hit (extends duration)
+// ============================================================
+section('Timer Extension');
+
+(() => {
+    const hm = new HazardManager();
+    hm.hazards.push({ x: TIP_X, y: 0, segIdx: 100, type: HAZARD.SLOW, hit: false });
+    hm.checkCollision(AX, AY, AF);
+    assert(hm.effectTimer === CFG.HAZARD_EFFECT_DUR, 'First slow sets timer');
+
+    // Simulate partial timer decay
+    hm.update(60);
+    const timerBefore = hm.effectTimer;
+    assert(timerBefore < CFG.HAZARD_EFFECT_DUR, 'Timer decayed');
+
+    // Hit another slow — timer should reset to full
+    hm.hazards.push({ x: TIP_X, y: 0, segIdx: 101, type: HAZARD.SLOW, hit: false });
+    hm.checkCollision(AX, AY, AF);
+    assert(hm.effectTimer === CFG.HAZARD_EFFECT_DUR,
+        'Second slow resets timer to full duration');
+    assert(hm.effectStack === -2, 'Second slow stacks');
+})();
+
+// ============================================================
+// Summary
+// ============================================================
+const summary = document.createElement('div');
+summary.className = 'summary ' + (passedTests === totalTests ? 'all-pass' : 'has-fail');
+summary.textContent = `${passedTests}/${totalTests} tests passed` +
+    (passedTests === totalTests ? ' — ALL PASS' : ` — ${totalTests - passedTests} FAILED`);
+resultsEl.appendChild(summary);
+
+console.log(`\n=== Hazard Manager Tests: ${passedTests}/${totalTests} passed ===`);
+if (passedTests < totalTests) {
+    console.error(`${totalTests - passedTests} tests FAILED`);
+}
+</script>
+</body>
+</html>

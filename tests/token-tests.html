@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drift Arrow – Token Tests</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+        .pass { color: #0f0; }
+        .fail { color: #f33; font-weight: bold; }
+        h2 { color: #0ff; margin-top: 24px; }
+        .summary { margin-top: 20px; padding: 10px; border: 2px solid; font-size: 16px; }
+        .summary.all-pass { border-color: #0f0; }
+        .summary.has-fail { border-color: #f33; }
+    </style>
+</head>
+<body>
+<h1>Drift Arrow – Token Tests</h1>
+<div id="results"></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/tokens.js"></script>
+<script>
+'use strict';
+
+let totalTests = 0;
+let passedTests = 0;
+const resultsEl = document.getElementById('results');
+
+function section(name) {
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    resultsEl.appendChild(h2);
+}
+
+function assert(condition, description) {
+    totalTests++;
+    const div = document.createElement('div');
+    if (condition) {
+        passedTests++;
+        div.className = 'pass';
+        div.textContent = `  PASS: ${description}`;
+    } else {
+        div.className = 'fail';
+        div.textContent = `  FAIL: ${description}`;
+    }
+    resultsEl.appendChild(div);
+}
+
+function assertApprox(actual, expected, tolerance, description) {
+    assert(Math.abs(actual - expected) < tolerance, `${description} (got ${actual.toFixed(6)}, expected ~${expected})`);
+}
+
+// ============================================================
+// TEST: TimeTokenManager reset
+// ============================================================
+section('TimeTokenManager Reset');
+
+(() => {
+    const tm = new TimeTokenManager();
+    tm.tokens.push({ x: 0, y: 0, segIdx: 5, collected: false, pulse: 0 });
+    tm.collectFlash = 10;
+    tm.lastSpawnSeg = 50;
+    tm.reset();
+    assert(tm.tokens.length === 0, 'Reset clears tokens');
+    assert(tm.collectFlash === 0, 'Reset clears collectFlash');
+    assert(tm.lastSpawnSeg === 0, 'Reset clears lastSpawnSeg');
+})();
+
+// ============================================================
+// TEST: Token spawn rules
+// ============================================================
+section('Token Spawn Rules');
+
+(() => {
+    const tm = new TimeTokenManager();
+    const origRandom = Math.random;
+
+    // Force random to always succeed
+    Math.random = () => 0;
+
+    // Too early — no spawn (in no-spawn zone)
+    const earlySeg = { index: 10, x: 0, y: 0, angle: 0, width: 100 };
+    tm.spawnOnSegment(earlySeg, 0);
+    assert(tm.tokens.length === 0,
+        'No spawn in no-spawn zone (index < TOKEN_NO_SPAWN_ZONE)');
+
+    // At exact boundary — condition is `< TOKEN_NO_SPAWN_ZONE` so this index IS allowed
+    // but lastSpawnSeg=0 and gap check: index(40) - lastSpawn(0) = 40 >= TOKEN_MIN_GAP(25) → ok
+    const boundarySeg = { index: CFG.TOKEN_NO_SPAWN_ZONE, x: 0, y: 0, angle: 0, width: 100 };
+    tm.spawnOnSegment(boundarySeg, 0);
+    assert(tm.tokens.length === 1,
+        'Spawn at exact TOKEN_NO_SPAWN_ZONE boundary (condition is strict <)');
+
+    // Past boundary — blocked by min gap (too close to boundary spawn)
+    const validSeg = { index: CFG.TOKEN_NO_SPAWN_ZONE + 1, x: 50, y: 50, angle: 0, width: 100 };
+    tm.spawnOnSegment(validSeg, 0);
+    assert(tm.tokens.length === 1,
+        'No spawn within TOKEN_MIN_GAP of last spawn (boundary)');
+
+    // Still too close
+    const tooCloseSeg = { index: CFG.TOKEN_NO_SPAWN_ZONE + 2, x: 50, y: 50, angle: 0, width: 100 };
+    tm.spawnOnSegment(tooCloseSeg, 0);
+    assert(tm.tokens.length === 1,
+        'No spawn within TOKEN_MIN_GAP of last spawn');
+
+    // After gap — spawn allowed
+    const afterGapSeg = {
+        index: CFG.TOKEN_NO_SPAWN_ZONE + CFG.TOKEN_MIN_GAP + 1,
+        x: 100, y: 100, angle: 0, width: 100
+    };
+    tm.spawnOnSegment(afterGapSeg, 0);
+    assert(tm.tokens.length === 2, 'Spawn allowed after min gap');
+
+    Math.random = origRandom;
+})();
+
+// ============================================================
+// TEST: Token placement within track width
+// ============================================================
+section('Token Placement');
+
+(() => {
+    const tm = new TimeTokenManager();
+    const origRandom = Math.random;
+    Math.random = () => 0; // offset = (0 - 0.5) * width * 0.5 = -25
+
+    const seg = { index: CFG.TOKEN_NO_SPAWN_ZONE + 1, x: 100, y: 100, angle: 0, width: 100 };
+    tm.spawnOnSegment(seg, 0);
+
+    assert(tm.tokens.length === 1, 'Token spawned');
+    const token = tm.tokens[0];
+    assert(token.segIdx === seg.index, 'Token has correct segIdx');
+    assert(token.collected === false, 'Token starts uncollected');
+    assert(isFinite(token.x) && isFinite(token.y), 'Token has finite position');
+
+    Math.random = origRandom;
+})();
+
+// ============================================================
+// TEST: checkCollect
+// ============================================================
+section('Token Collection');
+
+(() => {
+    const tm = new TimeTokenManager();
+
+    // Place token at arrow tip position (arrow at origin, facing right)
+    const tipX = CFG.ARROW_LENGTH * 0.6;
+    tm.tokens.push({ x: tipX, y: 0, segIdx: 100, collected: false, pulse: 0 });
+
+    const gained = tm.checkCollect(0, 0, 0); // arrow at origin facing right
+    assertApprox(gained, CFG.TIME_TOKEN_VALUE, 0.001, 'Collect returns TIME_TOKEN_VALUE');
+    assert(tm.tokens[0].collected === true, 'Token marked as collected');
+    assert(tm.collectFlash === 20, 'collectFlash set to 20');
+
+    // Already collected token doesn't give time again
+    const gained2 = tm.checkCollect(0, 0, 0);
+    assertApprox(gained2, 0, 0.001, 'Already-collected token gives 0 time');
+})();
+
+// ============================================================
+// TEST: Multiple token collection in one frame
+// ============================================================
+section('Multiple Token Collection');
+
+(() => {
+    const tm = new TimeTokenManager();
+    const tipX = CFG.ARROW_LENGTH * 0.6;
+
+    // Place two tokens at the tip (overlapping)
+    tm.tokens.push(
+        { x: tipX, y: 0, segIdx: 100, collected: false, pulse: 0 },
+        { x: tipX, y: 1, segIdx: 101, collected: false, pulse: 0 }
+    );
+
+    const gained = tm.checkCollect(0, 0, 0);
+    assertApprox(gained, CFG.TIME_TOKEN_VALUE * 2, 0.001,
+        'Multiple tokens collected: gains TIME_TOKEN_VALUE * 2');
+    assert(tm.tokens[0].collected === true, 'First token collected');
+    assert(tm.tokens[1].collected === true, 'Second token collected');
+})();
+
+// ============================================================
+// TEST: Token not collected when far away
+// ============================================================
+section('Token Not Collected');
+
+(() => {
+    const tm = new TimeTokenManager();
+    tm.tokens.push({ x: 500, y: 500, segIdx: 100, collected: false, pulse: 0 });
+
+    const gained = tm.checkCollect(0, 0, 0);
+    assertApprox(gained, 0, 0.001, 'Far token not collected');
+    assert(tm.tokens[0].collected === false, 'Far token stays uncollected');
+})();
+
+// ============================================================
+// TEST: cullBefore
+// ============================================================
+section('Token Culling');
+
+(() => {
+    const tm = new TimeTokenManager();
+    tm.tokens.push(
+        { x: 0, y: 0, segIdx: 10, collected: false, pulse: 0 },
+        { x: 0, y: 0, segIdx: 50, collected: false, pulse: 0 },
+        { x: 0, y: 0, segIdx: 100, collected: true, pulse: 0 },
+        { x: 0, y: 0, segIdx: 150, collected: false, pulse: 0 }
+    );
+
+    tm.cullBefore(50);
+    assert(tm.tokens.length === 3, 'Cull removes tokens before minSegIdx');
+    assert(tm.tokens[0].segIdx === 50, 'Token at boundary kept');
+
+    // Collected tokens also culled by segment
+    tm.cullBefore(101);
+    assert(tm.tokens.length === 1, 'Collected tokens also culled by segment');
+    assert(tm.tokens[0].segIdx === 150, 'Only future token remains');
+
+    // Cull everything
+    tm.cullBefore(999);
+    assert(tm.tokens.length === 0, 'All tokens culled');
+})();
+
+// ============================================================
+// TEST: collectFlash update
+// ============================================================
+section('collectFlash Decay');
+
+(() => {
+    const tm = new TimeTokenManager();
+    tm.collectFlash = 20;
+    tm.update(5);
+    assertApprox(tm.collectFlash, 15, 0.001, 'collectFlash decreases by dt60');
+
+    tm.update(20);
+    assert(tm.collectFlash <= 0, 'collectFlash reaches zero');
+})();
+
+// ============================================================
+// TEST: Spawn chance increases with difficulty
+// ============================================================
+section('Spawn Chance Scales with Difficulty');
+
+(() => {
+    const origRandom = Math.random;
+
+    // With difficulty=0, chance = TOKEN_SPAWN_CHANCE = 0.025
+    // With difficulty=1, chance = TOKEN_SPAWN_CHANCE + 0.01 = 0.035
+    // Set random to return a value between base and boosted chance
+    const testChance = CFG.TOKEN_SPAWN_CHANCE + 0.005; // 0.030
+
+    let spawnedLow = false, spawnedHigh = false;
+    Math.random = () => testChance; // Will fail for low diff, pass for high diff
+
+    const tm1 = new TimeTokenManager();
+    const seg1 = { index: CFG.TOKEN_NO_SPAWN_ZONE + 1, x: 0, y: 0, angle: 0, width: 100 };
+    tm1.spawnOnSegment(seg1, 0); // difficulty=0, chance = 0.025 < 0.030
+    spawnedLow = tm1.tokens.length > 0;
+
+    const tm2 = new TimeTokenManager();
+    tm2.spawnOnSegment(seg1, 1); // difficulty=1, chance = 0.035 > 0.030
+    spawnedHigh = tm2.tokens.length > 0;
+
+    assert(!spawnedLow && spawnedHigh,
+        'Higher difficulty increases spawn chance');
+
+    Math.random = origRandom;
+})();
+
+// ============================================================
+// TEST: HAZARD enum values
+// ============================================================
+section('HAZARD Enum');
+
+(() => {
+    assert(HAZARD.SLOW === 0, 'HAZARD.SLOW = 0');
+    assert(HAZARD.SPEED === 1, 'HAZARD.SPEED = 1');
+    assert(HAZARD.DEATH === 2, 'HAZARD.DEATH = 2');
+})();
+
+// ============================================================
+// TEST: CFG falsy-guard bug (U-CFG-02)
+// ============================================================
+section('CFG Falsy Guard Bug');
+
+(() => {
+    // The tokens.js file uses `if (!CFG.HAZARD_RADIUS)` guards
+    // This means CFG.HAZARD_RADIUS = 0 would be treated as unset
+    // Verify the defaults are non-zero (documenting the known bug)
+    assert(CFG.HAZARD_RADIUS > 0, 'HAZARD_RADIUS defaults to non-zero');
+    assert(CFG.DEATH_HAZARD_RADIUS > 0, 'DEATH_HAZARD_RADIUS defaults to non-zero');
+    assert(CFG.HAZARD_EFFECT_DUR > 0, 'HAZARD_EFFECT_DUR defaults to non-zero');
+    assert(CFG.TOKEN_MIN_GAP > 0, 'TOKEN_MIN_GAP defaults to non-zero');
+    assert(CFG.TOKEN_SPAWN_CHANCE > 0, 'TOKEN_SPAWN_CHANCE defaults to non-zero');
+    assert(CFG.HAZARD_SLOW_MULT > 0, 'HAZARD_SLOW_MULT defaults to non-zero');
+    assert(CFG.HAZARD_SPEED_MULT > 0, 'HAZARD_SPEED_MULT defaults to non-zero');
+})();
+
+// ============================================================
+// Summary
+// ============================================================
+const summary = document.createElement('div');
+summary.className = 'summary ' + (passedTests === totalTests ? 'all-pass' : 'has-fail');
+summary.textContent = `${passedTests}/${totalTests} tests passed` +
+    (passedTests === totalTests ? ' — ALL PASS' : ` — ${totalTests - passedTests} FAILED`);
+resultsEl.appendChild(summary);
+
+console.log(`\n=== Token Tests: ${passedTests}/${totalTests} passed ===`);
+if (passedTests < totalTests) {
+    console.error(`${totalTests - passedTests} tests FAILED`);
+}
+</script>
+</body>
+</html>

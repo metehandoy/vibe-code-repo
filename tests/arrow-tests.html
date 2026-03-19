@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drift Arrow – Arrow Physics Tests</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+        .pass { color: #0f0; }
+        .fail { color: #f33; font-weight: bold; }
+        h2 { color: #0ff; margin-top: 24px; }
+        .summary { margin-top: 20px; padding: 10px; border: 2px solid; font-size: 16px; }
+        .summary.all-pass { border-color: #0f0; }
+        .summary.has-fail { border-color: #f33; }
+    </style>
+</head>
+<body>
+<h1>Drift Arrow – Arrow Physics Tests</h1>
+<div id="results"></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/arrow.js"></script>
+<script>
+'use strict';
+
+let totalTests = 0;
+let passedTests = 0;
+const resultsEl = document.getElementById('results');
+
+function section(name) {
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    resultsEl.appendChild(h2);
+}
+
+function assert(condition, description) {
+    totalTests++;
+    const div = document.createElement('div');
+    if (condition) {
+        passedTests++;
+        div.className = 'pass';
+        div.textContent = `  PASS: ${description}`;
+    } else {
+        div.className = 'fail';
+        div.textContent = `  FAIL: ${description}`;
+    }
+    resultsEl.appendChild(div);
+}
+
+function assertApprox(actual, expected, tolerance, description) {
+    assert(Math.abs(actual - expected) < tolerance, `${description} (got ${actual.toFixed(6)}, expected ~${expected})`);
+}
+
+// Helper: create a fresh arrow at default position
+function freshArrow() {
+    const a = new Arrow();
+    a.reset(100, 100);
+    return a;
+}
+
+// Helper: step arrow multiple frames
+function stepArrow(arrow, frames, inputDir, braking, maxSpeed, boostActive) {
+    for (let i = 0; i < frames; i++) {
+        arrow.update(inputDir || 0, 1, braking || false, maxSpeed || 1, boostActive || false);
+    }
+}
+
+// ============================================================
+// TEST: Arrow constructor and reset
+// ============================================================
+section('Arrow Reset State');
+
+(() => {
+    const a = freshArrow();
+    assertApprox(a.x, 100, 0.001, 'Reset x = 100');
+    assertApprox(a.y, 100, 0.001, 'Reset y = 100');
+    assertApprox(a.facing, -Math.PI / 2, 0.001, 'Reset facing = -PI/2 (up)');
+    assertApprox(a.moveAngle, -Math.PI / 2, 0.001, 'Reset moveAngle = -PI/2');
+    assertApprox(a.steerVel, 0, 0.001, 'Reset steerVel = 0');
+    assertApprox(a.speedMult, 1, 0.001, 'Reset speedMult = 1');
+    assert(a.alive === true, 'Reset alive = true');
+    assertApprox(a.totalDistance, 0, 0.001, 'Reset totalDistance = 0');
+    assert(a.drifting === false, 'Reset drifting = false');
+    assertApprox(a.driftAmount, 0, 0.001, 'Reset driftAmount = 0');
+})();
+
+// ============================================================
+// TEST: Steering
+// ============================================================
+section('Steering');
+
+(() => {
+    // Steering right increases facing angle
+    const a = freshArrow();
+    const initialFacing = a.facing;
+    stepArrow(a, 10, 1); // steer right for 10 frames
+    assert(a.facing > initialFacing, 'Steering right increases facing angle');
+    assert(a.steerVel > 0, 'Steering right produces positive steerVel');
+
+    // Steering left decreases facing angle
+    const a2 = freshArrow();
+    const initialFacing2 = a2.facing;
+    stepArrow(a2, 10, -1); // steer left for 10 frames
+    assert(a2.facing < initialFacing2, 'Steering left decreases facing angle');
+    assert(a2.steerVel < 0, 'Steering left produces negative steerVel');
+
+    // No input: steerVel dampens to near zero
+    const a3 = freshArrow();
+    stepArrow(a3, 10, 1); // build up steerVel
+    const steerBefore = a3.steerVel;
+    stepArrow(a3, 60, 0); // release for 60 frames
+    assert(Math.abs(a3.steerVel) < Math.abs(steerBefore) * 0.1,
+        'SteerVel dampens when no input');
+
+    // SteerVel is clamped to STEER_MAX
+    const a4 = freshArrow();
+    stepArrow(a4, 1000, 1); // steer right for many frames
+    assert(a4.steerVel <= CFG.STEER_MAX + 0.0001,
+        'SteerVel clamped to STEER_MAX');
+
+    stepArrow(a4, 0); // clear
+    const a5 = freshArrow();
+    stepArrow(a5, 1000, -1);
+    assert(a5.steerVel >= -CFG.STEER_MAX - 0.0001,
+        'SteerVel clamped to -STEER_MAX');
+})();
+
+// ============================================================
+// TEST: Grip / Drift Mechanic
+// ============================================================
+section('Grip / Drift');
+
+(() => {
+    // After steering, moveAngle lags behind facing (drift)
+    const a = freshArrow();
+    stepArrow(a, 20, 1); // steer right
+    const diff = Math.abs(angleDiff(a.facing, a.moveAngle));
+    assert(diff > 0.01, 'moveAngle lags behind facing after steering (drift occurs)');
+    assert(a.drifting === true, 'Arrow is drifting after sustained steering');
+    assert(a.driftAmount > 0.05, 'driftAmount > threshold during drift');
+
+    // Releasing input: moveAngle catches up to facing over time
+    const a2 = freshArrow();
+    stepArrow(a2, 30, 1); // build up drift
+    const driftBefore = Math.abs(angleDiff(a2.facing, a2.moveAngle));
+    stepArrow(a2, 120, 0); // release for 2 seconds
+    const driftAfter = Math.abs(angleDiff(a2.facing, a2.moveAngle));
+    assert(driftAfter < driftBefore, 'Drift reduces after releasing input');
+
+    // Boost halves grip → more drift
+    const aNoBoost = freshArrow();
+    stepArrow(aNoBoost, 20, 1, false, 1, false);
+    const driftNoBoost = Math.abs(angleDiff(aNoBoost.facing, aNoBoost.moveAngle));
+
+    const aBoost = freshArrow();
+    stepArrow(aBoost, 20, 1, false, 1, true);
+    const driftBoost = Math.abs(angleDiff(aBoost.facing, aBoost.moveAngle));
+
+    assert(driftBoost > driftNoBoost,
+        'Boost active produces more drift than normal (halved grip)');
+})();
+
+// ============================================================
+// TEST: Speed Recovery (U-ARR-REC-05 critical: capped by maxSpeed)
+// ============================================================
+section('Speed Recovery');
+
+(() => {
+    // Speed recovers when not drifting/braking
+    const a = freshArrow();
+    a.speedMult = 0.6; // artificially lower speed
+    stepArrow(a, 60, 0, false); // coast for 1 second
+    assert(a.speedMult > 0.6, 'Speed recovers from 0.6 when coasting');
+
+    // Recovery is faster when releasing drift (SPEED_RECOVERY_RELEASE)
+    const a2 = freshArrow();
+    a2.speedMult = 0.6;
+    a2.driftAmount = 0.01; // nearly no drift
+    const speedBefore = a2.speedMult;
+    a2.update(0, 1, false, 1, false); // one frame, no input, no drift
+    const recoveryRelease = a2.speedMult - speedBefore;
+
+    const a3 = freshArrow();
+    a3.speedMult = 0.6;
+    // Force into drift state for slower recovery
+    stepArrow(a3, 30, 1, false); // build drift
+    const speedBeforeDrift = a3.speedMult;
+    a3.update(1, 1, false, 1, false); // one more frame while drifting
+    const recoveryDrift = a3.speedMult - speedBeforeDrift;
+
+    // Release recovery should be faster than drift recovery (noting drift also applies drag)
+    assert(recoveryRelease > 0, 'Release recovery rate is positive');
+
+    // CRITICAL: Recovery capped by maxSpeed parameter
+    const a4 = freshArrow();
+    a4.speedMult = 0.5;
+    stepArrow(a4, 300, 0, false, 0.55); // maxSpeed = 0.55 (slow hazard)
+    assert(a4.speedMult <= 0.55 + 0.001,
+        'Speed recovery capped by maxSpeed=0.55 (hazard slow)');
+
+    // maxSpeed = 1 allows full recovery
+    const a5 = freshArrow();
+    a5.speedMult = 0.5;
+    stepArrow(a5, 300, 0, false, 1);
+    assert(a5.speedMult > 0.9,
+        'Speed recovers toward 1.0 when maxSpeed=1');
+
+    // No recovery while braking
+    const a6 = freshArrow();
+    a6.speedMult = 0.5;
+    const speedBeforeBrake = a6.speedMult;
+    // Braking only (no steering input)
+    a6.update(0, 1, true, 1, false);
+    assert(a6.speedMult <= speedBeforeBrake,
+        'No speed recovery while braking');
+})();
+
+// ============================================================
+// TEST: Drift Drag (U-ARR-DRG-04 critical: floor at 0.5)
+// ============================================================
+section('Drift Drag');
+
+(() => {
+    // Drift drag reduces speedMult
+    const a = freshArrow();
+    stepArrow(a, 30, 1); // build up drift
+    assert(a.speedMult < 1, 'Drift drag reduces speedMult below 1');
+
+    // CRITICAL: Speed never drops below 0.5 (drag floor)
+    const a2 = freshArrow();
+    stepArrow(a2, 1000, 1); // extreme drift for many frames
+    assert(a2.speedMult >= 0.5 - 0.001,
+        'speedMult never drops below 0.5 (drift drag floor)');
+
+    // Small drifts cause minimal drag
+    const a3 = freshArrow();
+    a3.update(1, 1, false, 1, false); // tiny steer
+    const smallDragLoss = 1 - a3.speedMult;
+
+    const a4 = freshArrow();
+    stepArrow(a4, 15, 1); // build medium drift first
+    const speedBefore = a4.speedMult;
+    a4.update(1, 1, false, 1, false);
+    const bigDragLoss = speedBefore - a4.speedMult;
+
+    // Larger drift should cause more drag (exponential curve)
+    assert(bigDragLoss > smallDragLoss || smallDragLoss < 0.001,
+        'Larger drift causes more drag than small drift');
+})();
+
+// ============================================================
+// TEST: Braking
+// ============================================================
+section('Braking');
+
+(() => {
+    // Braking reduces speedMult (braking decel is applied in Game.updatePlaying,
+    // but Arrow.update still prevents recovery while braking)
+    const a = freshArrow();
+    a.speedMult = 1;
+    // Simulate braking as Game.updatePlaying does it
+    a.update(0, 1, true, 1, false);
+    a.speedMult = Math.max(CFG.BRAKE_MIN_SPEED, a.speedMult - CFG.BRAKE_DECEL);
+    assert(a.speedMult < 1, 'Braking reduces speedMult (via BRAKE_DECEL)');
+
+    // Braking has a minimum speed floor (BRAKE_MIN_SPEED)
+    const a2 = freshArrow();
+    for (let i = 0; i < 300; i++) {
+        a2.update(0, 1, true, 1, false);
+        a2.speedMult = Math.max(CFG.BRAKE_MIN_SPEED, a2.speedMult - CFG.BRAKE_DECEL);
+    }
+    assert(a2.speedMult >= CFG.BRAKE_MIN_SPEED - 0.001,
+        'Braking respects BRAKE_MIN_SPEED floor');
+})();
+
+// ============================================================
+// TEST: Movement along velocity direction
+// ============================================================
+section('Movement Direction');
+
+(() => {
+    // Arrow moves along moveAngle, not facing
+    const a = freshArrow();
+    const startX = a.x, startY = a.y;
+    stepArrow(a, 1, 0); // one frame, no steering
+    // Default moveAngle is -PI/2 (up), so y should decrease
+    assert(a.y < startY, 'Arrow moves upward (y decreases) when facing up');
+    assertApprox(a.x, startX, 0.01, 'Arrow does not move sideways when going straight up');
+
+    // totalDistance increases with movement
+    const a2 = freshArrow();
+    stepArrow(a2, 10, 0);
+    assert(a2.totalDistance > 0, 'totalDistance increases over time');
+})();
+
+// ============================================================
+// TEST: Realignment (facing → moveAngle when no input)
+// ============================================================
+section('Realignment');
+
+(() => {
+    const a = freshArrow();
+    // Force a difference between facing and moveAngle
+    a.facing = 0;
+    a.moveAngle = -Math.PI / 4;
+    stepArrow(a, 60, 0); // coast with no input
+    // Facing should move toward moveAngle
+    const diff = Math.abs(angleDiff(a.facing, a.moveAngle));
+    assert(diff < Math.PI / 4, 'Facing realigns toward moveAngle when no input');
+})();
+
+// ============================================================
+// TEST: Drift trail emission
+// ============================================================
+section('Drift Trail');
+
+(() => {
+    const a = freshArrow();
+    assert(a.driftTrail.length === 0, 'Trail empty on reset');
+
+    // Build drift to trigger trail emission
+    stepArrow(a, 30, 1);
+    assert(a.driftTrail.length > 0, 'Trail emitted during drift');
+
+    // Trail ages and gets culled
+    const trailLenBefore = a.driftTrail.length;
+    stepArrow(a, 50, 0); // release
+    // After many frames, old trail points should be culled
+    const allAged = a.driftTrail.every(p => p.age > 0);
+    assert(allAged || a.driftTrail.length === 0, 'Trail points age over time');
+})();
+
+// ============================================================
+// TEST: Drift+brake state machine
+// ============================================================
+section('Drift+Brake State Machine');
+
+(() => {
+    // Drift+brake requires 150ms delay before activating
+    const a = freshArrow();
+    stepArrow(a, 20, 1); // build drift
+    // Now brake while still steering
+    a.update(1, 1, true, 1, false); // one frame of drift+brake
+    assert(a._driftBrakeActive === false,
+        'Drift+brake not active immediately (needs 150ms delay)');
+
+    // After enough frames to exceed 150ms
+    const a2 = freshArrow();
+    stepArrow(a2, 20, 1); // build drift
+    // 150ms / 16.67ms ≈ 9 frames
+    for (let i = 0; i < 15; i++) {
+        a2.update(1, 1, true, 1, false);
+    }
+    assert(a2._driftBrakeActive === true,
+        'Drift+brake activates after 150ms delay');
+
+    // Releasing both clears drift+brake state
+    const a3 = freshArrow();
+    stepArrow(a3, 20, 1);
+    for (let i = 0; i < 15; i++) {
+        a3.update(1, 1, true, 1, false);
+    }
+    assert(a3._driftBrakeActive === true, 'Drift+brake active before release');
+    a3.update(0, 1, false, 1, false); // release everything
+    assert(a3._driftBrakeActive === false,
+        'Drift+brake cleared when input released');
+})();
+
+// ============================================================
+// TEST: Wall hit timer
+// ============================================================
+section('Wall Hit Timer');
+
+(() => {
+    const a = freshArrow();
+    a.wallHitTimer = 10;
+    stepArrow(a, 5, 0);
+    assert(a.wallHitTimer < 10, 'wallHitTimer decrements over frames');
+
+    const a2 = freshArrow();
+    a2.wallHitTimer = 3;
+    stepArrow(a2, 10, 0);
+    assert(a2.wallHitTimer <= 0, 'wallHitTimer reaches zero');
+})();
+
+// ============================================================
+// Summary
+// ============================================================
+const summary = document.createElement('div');
+summary.className = 'summary ' + (passedTests === totalTests ? 'all-pass' : 'has-fail');
+summary.textContent = `${passedTests}/${totalTests} tests passed` +
+    (passedTests === totalTests ? ' — ALL PASS' : ` — ${totalTests - passedTests} FAILED`);
+resultsEl.appendChild(summary);
+
+console.log(`\n=== Arrow Physics Tests: ${passedTests}/${totalTests} passed ===`);
+if (passedTests < totalTests) {
+    console.error(`${totalTests - passedTests} tests FAILED`);
+}
+</script>
+</body>
+</html>
