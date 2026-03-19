@@ -57,9 +57,9 @@ All files share the global scope. There are no module boundaries — any file ca
 
 3. **Vestigial `arrow.wallHitTimer` rendering** (`renderer.js:179`): The renderer checks `arrow.wallHitTimer > 0` for a glow flash effect, and the arrow decrements it each frame (`arrow.js:127`), but no code ever sets it to a positive value — wall hits are instant death. This was likely from a previous non-lethal wall bounce mechanic.
 
-4. **Falsy CFG guard in tokens.js** (lines 10-21): `if (!CFG.HAZARD_RADIUS)` treats 0 as "unset". Any attempt to set these values to 0 via URL hash would be silently overridden.
+4. **~~Falsy CFG guard in tokens.js~~** (lines 10-21): **Fixed** — changed from `if (!CFG.HAZARD_RADIUS)` to `if (CFG.HAZARD_RADIUS == null)`. Values can now be legitimately set to 0.
 
-5. **Duplicate dead-state check** (`game.js:214`): `if (this.state !== STATE.PLAYING) return;` appears three times in `updatePlaying()` (lines 208, 212, 214). The third one at line 214 is redundant — line 212 already returns if not PLAYING, and nothing between 212 and 214 can change state.
+5. **~~Duplicate dead-state check~~** (`game.js:214`): **Fixed** — the redundant third `if (this.state !== STATE.PLAYING) return;` has been removed.
 
 6. **Linear scan in `track.findClosest()`** (`track.js:287-294`): Iterates all spine segments (~220) every frame to find the closest. Called twice per frame in `updatePlaying()` (lines 207 via `checkWallCollision` and 217 directly). Could use the known `currentSegIdx` to limit the search window.
 

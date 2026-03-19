@@ -62,24 +62,24 @@
 
 ### 3.5 Track Segment Culling → Token/Hazard Culling (Boundary 9)
 
-**Contract:** `game.js:201-204` — when `track.minSegIdx` is truthy, `tokens.cullBefore()` and `hazards.cullBefore()` are called with that value.
+**Contract:** `game.js:202-205` — when `track.minSegIdx > 0`, `tokens.cullBefore()` and `hazards.cullBefore()` are called with that value. **Fixed** — previously used a falsy check.
 
 | ID | Scenario | Setup | Expected |
 |----|----------|-------|----------|
 | I-CULL-01 | Arrow advances, old segments trimmed | track.update() trims segments | track.minSegIdx > 0, tokens/hazards with segIdx < minSegIdx removed |
-| I-CULL-02 | No segments trimmed yet | track.minSegIdx = 0 | **Falsy check skips culling** — tokens/hazards retained (fragile, risk map §4.3) |
+| I-CULL-02 | No segments trimmed yet | track.minSegIdx = 0 | Culling skipped (correct — `> 0` check, **fixed** from previous falsy guard) |
 | I-CULL-03 | Collected token on culled segment | Token with collected=true on old segment | Removed by cullBefore, reducing array size |
 | I-CULL-04 | Hit hazard on culled segment | Hazard with hit=true on old segment | Removed by cullBefore |
 
 ### 3.6 Death Hazard → die() Flag Chain (Boundary: state consistency)
 
-**Contract:** Death hazard collision at `game.js:259-264` sets `diedFromWall = true` then calls `die()`. `die()` checks `diedFromWall` to set `deathCause`. **Bug identified in risk map §4.3:** death hazard sets `diedFromWall = true` but it's not a wall hit.
+**Contract:** Death hazard collision at `game.js:259-264` sets `diedFromWall = false` then calls `die()`. `die()` checks `diedFromWall` to set `deathCause`. **Fixed** — previously death hazard incorrectly set `diedFromWall = true`.
 
 | ID | Scenario | Setup | Expected |
 |----|----------|-------|----------|
 | I-DEATH-01 | Wall collision death | Arrow hits wall | deathCause = 'wall', diedFromWall was set true at line 144 |
 | I-DEATH-02 | Timer expiry death | timeLeft reaches 0 | deathCause = 'time' |
-| I-DEATH-03 | Death hazard | Arrow hits DEATH hazard | **Current: deathCause = 'wall'** (bug — diedFromWall=true at line 262). **Expected after fix: deathCause = 'other' or 'hazard'** |
+| I-DEATH-03 | Death hazard | Arrow hits DEATH hazard | deathCause = 'other' (diedFromWall=false at line 261). **Fixed** — previously produced deathCause = 'wall'. |
 | I-DEATH-04 | Back wall death | Arrow behind backWall | deathCause = 'wall', diedFromWall set at line 169 |
 
 ### 3.7 Audio Lifecycle (Boundary 5)

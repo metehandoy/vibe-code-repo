@@ -182,7 +182,7 @@ section('Death Cause Classification');
     game2.die();
     assert(game2.deathCause === 'wall', 'diedFromWall=true → deathCause="wall"');
 
-    // Other death (e.g., hazard sets diedFromWall=true but this tests the else branch)
+    // Other death (e.g., death hazard sets diedFromWall=false, producing deathCause='other')
     const game3 = createTestGame();
     game3.startGame();
     game3.state = STATE.PLAYING;

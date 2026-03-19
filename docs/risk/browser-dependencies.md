@@ -9,7 +9,7 @@
 | **Web Audio API** | audio.js | `webkitAudioContext` fallback (line 10) | Safari required `webkitAudioContext` until Safari 14.1 (2021). The fallback handles this. |
 | **AudioContext.resume()** | audio.js:16 | No | Required for autoplay policy. Chrome auto-suspends on creation; Safari requires explicit user gesture for resume. |
 | **Touch Events** | input.js:15-31 | No | Not supported on Firefox desktop (no touch screen). Fine on all mobile browsers. |
-| **localStorage** | game.js:20,102; config.js; dev.html | No | Available everywhere. May throw in private browsing mode on older Safari. Game catches nothing — `localStorage.getItem()` would throw, crashing the Game constructor. |
+| **localStorage** | game.js:21,106; config.js; dev.html | No | Available everywhere. May throw in private browsing mode on older Safari. **Fixed** — Game constructor now wraps `localStorage` access in try-catch, defaulting to 0. |
 | **window.innerWidth/Height** | renderer.js:13-14 | No | Universal. Returns CSS pixels. On iOS Safari, may change when the URL bar hides/shows — triggers resize. |
 | **Date.now()** | renderer.js:238,328,371; tokens.js:79; hazards.js:115 | No | Universal. Used for UI pulse animations. |
 | **JSON.parse** | config.js:10 | No | Used for URL hash config parsing. Wrapped in try/catch. |
@@ -28,7 +28,7 @@
 - `AudioContext.resume()` must be inside a user gesture handler. The `_ensure()` pattern calling `resume()` from the game loop (not a touch handler) may silently fail. Drift sound may break after backgrounding.
 - `setTimeout` throttled to 1-second minimum in backgrounded tabs (iOS 15+). The 300ms drift cleanup in `stopDrift()` may be delayed.
 - Canvas `shadowBlur` is software-rendered on older iOS devices. Heavy glow usage (tokens, hazards) will drop frames.
-- `localStorage` throws `QuotaExceededError` in private browsing mode on Safari < 14. The Game constructor (line 20) does not catch this.
+- `localStorage` throws `QuotaExceededError` in private browsing mode on Safari < 14. **Fixed** — the Game constructor now wraps localStorage access in try-catch.
 
 **Samsung Internet:**
 - Generally follows Chrome behavior. No known specific risks for this codebase.
