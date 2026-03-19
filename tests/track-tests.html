@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drift Arrow – Track Tests</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+        .pass { color: #0f0; }
+        .fail { color: #f33; font-weight: bold; }
+        h2 { color: #0ff; margin-top: 24px; }
+        .summary { margin-top: 20px; padding: 10px; border: 2px solid; font-size: 16px; }
+        .summary.all-pass { border-color: #0f0; }
+        .summary.has-fail { border-color: #f33; }
+    </style>
+</head>
+<body>
+<h1>Drift Arrow – Track Tests</h1>
+<div id="results"></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/tokens.js"></script>
+<script src="../js/track.js"></script>
+<script>
+'use strict';
+
+let totalTests = 0;
+let passedTests = 0;
+const resultsEl = document.getElementById('results');
+
+function section(name) {
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    resultsEl.appendChild(h2);
+}
+
+function assert(condition, description) {
+    totalTests++;
+    const div = document.createElement('div');
+    if (condition) {
+        passedTests++;
+        div.className = 'pass';
+        div.textContent = `  PASS: ${description}`;
+    } else {
+        div.className = 'fail';
+        div.textContent = `  FAIL: ${description}`;
+    }
+    resultsEl.appendChild(div);
+}
+
+function assertApprox(actual, expected, tolerance, description) {
+    assert(Math.abs(actual - expected) < tolerance, `${description} (got ${actual.toFixed(4)}, expected ~${expected})`);
+}
+
+// ============================================================
+// TEST: Track init (U-TRK-INI-01)
+// ============================================================
+section('Track Init');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    // Should generate LOOK_AHEAD + LOOK_BEHIND + 20 segments
+    const expectedCount = CFG.LOOK_AHEAD + CFG.LOOK_BEHIND + 20;
+    assert(track.spine.length === expectedCount,
+        `Init generates ${expectedCount} segments (got ${track.spine.length})`);
+
+    // Segments should have sequential indices
+    const firstIdx = track.spine[0].index;
+    let sequential = true;
+    for (let i = 1; i < track.spine.length; i++) {
+        if (track.spine[i].index !== firstIdx + i) {
+            sequential = false;
+            break;
+        }
+    }
+    assert(sequential, 'Segments have sequential indices');
+
+    // Starting segment should be near the init position
+    const first = track.spine[0];
+    assert(isFinite(first.x) && isFinite(first.y), 'First segment has finite coordinates');
+
+    // backWall should be null after fresh init (set by startGame or update)
+    // Actually init doesn't set backWall, it stays null
+    assert(track.backWall === null, 'backWall is null after init');
+
+    // Agent phases are randomized
+    const track2 = new Track();
+    track2.init(400, 400);
+    // Very unlikely to get exact same phases (probability ≈ 0)
+    assert(track.agentWanderPhase !== track2.agentWanderPhase ||
+           track.agentRhythmPhase !== track2.agentRhythmPhase,
+        'Agent phases are randomized between inits');
+})();
+
+// ============================================================
+// TEST: Track width (U-TRK-WID-06 critical: all widths valid)
+// ============================================================
+section('Track Width Validity');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    let allValid = true;
+    let minWidth = Infinity, maxWidth = -Infinity;
+    for (const seg of track.spine) {
+        if (seg.width < CFG.MIN_TRACK_WIDTH * 0.9 || seg.width > CFG.TRACK_WIDTH * 1.1) {
+            allValid = false;
+        }
+        if (seg.width < minWidth) minWidth = seg.width;
+        if (seg.width > maxWidth) maxWidth = seg.width;
+    }
+    assert(allValid,
+        `All widths in valid range [${(CFG.MIN_TRACK_WIDTH * 0.9).toFixed(1)}, ${(CFG.TRACK_WIDTH * 1.1).toFixed(1)}] (actual: ${minWidth.toFixed(1)}-${maxWidth.toFixed(1)})`);
+
+    // Early segments (runway) should be wider
+    const earlyWidth = track.spine[5].width;
+    assert(earlyWidth > CFG.MIN_TRACK_WIDTH * 1.5,
+        `Runway segments are wide (got ${earlyWidth.toFixed(1)}, min*1.5=${(CFG.MIN_TRACK_WIDTH * 1.5).toFixed(1)})`);
+})();
+
+// ============================================================
+// TEST: Track width transitions are smooth
+// ============================================================
+section('Track Width Smoothness');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    let maxJump = 0;
+    for (let i = 1; i < track.spine.length; i++) {
+        const jump = Math.abs(track.spine[i].width - track.spine[i - 1].width);
+        if (jump > maxJump) maxJump = jump;
+    }
+    // WIDTH_TRANSITION_RATE = 0.12, so max jump should be reasonable
+    assert(maxJump < 20,
+        `Width transitions are smooth (max jump=${maxJump.toFixed(2)})`);
+})();
+
+// ============================================================
+// TEST: Segment data integrity
+// ============================================================
+section('Segment Data Integrity');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    let allFinite = true;
+    for (const seg of track.spine) {
+        if (!isFinite(seg.x) || !isFinite(seg.y) || !isFinite(seg.angle) || !isFinite(seg.width)) {
+            allFinite = false;
+            break;
+        }
+    }
+    assert(allFinite, 'All segment fields are finite');
+
+    // Segments should have x, y, angle, width, index
+    const seg = track.spine[10];
+    assert('x' in seg && 'y' in seg && 'angle' in seg && 'width' in seg && 'index' in seg,
+        'Segments have required fields (x, y, angle, width, index)');
+})();
+
+// ============================================================
+// TEST: findClosest
+// ============================================================
+section('findClosest');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    // Find closest to a known segment position
+    const midSeg = track.spine[Math.floor(track.spine.length / 2)];
+    const found = track.findClosest(midSeg.x, midSeg.y);
+    assert(found !== null, 'findClosest returns a segment');
+    assert(found.index === midSeg.index,
+        'findClosest returns the exact segment at its position');
+
+    // Find closest to a point between two segments
+    const s1 = track.spine[50];
+    const s2 = track.spine[51];
+    const midX = (s1.x + s2.x) / 2;
+    const midY = (s1.y + s2.y) / 2;
+    const midFound = track.findClosest(midX, midY);
+    assert(midFound.index === s1.index || midFound.index === s2.index,
+        'findClosest returns one of the two nearest segments');
+
+    // Empty spine
+    const emptyTrack = new Track();
+    const nullResult = emptyTrack.findClosest(0, 0);
+    assert(nullResult === null, 'findClosest returns null for empty spine');
+})();
+
+// ============================================================
+// TEST: getSegment
+// ============================================================
+section('getSegment');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    const seg = track.spine[20];
+    const found = track.getSegment(seg.index);
+    assert(found !== null, 'getSegment finds existing segment');
+    assert(found.index === seg.index, 'getSegment returns correct segment');
+
+    const notFound = track.getSegment(99999);
+    assert(notFound === null, 'getSegment returns null for non-existent index');
+})();
+
+// ============================================================
+// TEST: getWalls
+// ============================================================
+section('getWalls');
+
+(() => {
+    const track = new Track();
+
+    // Horizontal segment (angle=0), walls should be above and below
+    const seg = { x: 100, y: 100, angle: 0, width: 100 };
+    const walls = track.getWalls(seg);
+    assertApprox(walls.lx, 100, 0.001, 'Horizontal seg: left wall x = center');
+    assertApprox(walls.ly, 150, 0.001, 'Horizontal seg: left wall y = center + hw');
+    assertApprox(walls.rx, 100, 0.001, 'Horizontal seg: right wall x = center');
+    assertApprox(walls.ry, 50, 0.001, 'Horizontal seg: right wall y = center - hw');
+
+    // Vertical segment (angle=-PI/2), perpendicular is at angle=0 (rightward)
+    // Left wall (nx*hw) is at (100+40, 100) = (140, 100)
+    // Right wall (-nx*hw) is at (100-40, 100) = (60, 100)
+    const vseg = { x: 100, y: 100, angle: -Math.PI / 2, width: 80 };
+    const vwalls = track.getWalls(vseg);
+    assertApprox(vwalls.lx, 140, 0.001, 'Vertical seg: left wall x = center + hw');
+    assertApprox(vwalls.rx, 60, 0.001, 'Vertical seg: right wall x = center - hw');
+})();
+
+// ============================================================
+// TEST: Track update (trim behind, generate ahead)
+// ============================================================
+section('Track Update');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+    const initialLen = track.spine.length;
+    const initialFirstIdx = track.spine[0].index;
+
+    // Move arrow forward
+    const arrowIdx = track.spine[Math.floor(track.spine.length / 2)].index;
+    track.update(arrowIdx);
+
+    // Should have trimmed behind and generated ahead
+    assert(track.spine.length > 0, 'Spine not empty after update');
+    assert(track.spine[0].index >= initialFirstIdx, 'Old segments trimmed');
+
+    // backWall should be set after trimming
+    if (track.spine[0].index > initialFirstIdx) {
+        assert(track.backWall !== null, 'backWall set after trimming');
+        assert(isFinite(track.backWall.x) && isFinite(track.backWall.y),
+            'backWall has finite coordinates');
+        assert(track.backWall.width > 0, 'backWall has positive width');
+    }
+
+    // Last segment should be far enough ahead
+    const lastIdx = track.spine[track.spine.length - 1].index;
+    assert(lastIdx >= arrowIdx + CFG.LOOK_AHEAD,
+        'Segments generated far enough ahead');
+})();
+
+// ============================================================
+// TEST: backWall width is segment width + 40
+// ============================================================
+section('BackWall Properties');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    // Force a trim by moving arrowIdx far forward
+    const farIdx = track.spine[0].index + CFG.LOOK_BEHIND + 20;
+    track.update(farIdx);
+
+    if (track.backWall) {
+        assert(track.backWall.width > 40,
+            'backWall width includes +40 padding');
+    }
+})();
+
+// ============================================================
+// TEST: onSegmentGenerated callback
+// ============================================================
+section('Segment Generation Callback');
+
+(() => {
+    const track = new Track();
+    const generated = [];
+    track.onSegmentGenerated = (seg, diff) => {
+        generated.push({ seg, diff });
+    };
+    track.init(400, 400);
+
+    assert(generated.length > 0, 'Callback fired during init');
+    assert(generated[0].seg.index > 0, 'Callback receives segment with index');
+    assert(typeof generated[0].diff === 'number', 'Callback receives difficulty number');
+
+    // Difficulty increases with index
+    const earlyDiff = generated[10].diff;
+    const lateDiff = generated[generated.length - 1].diff;
+    assert(lateDiff >= earlyDiff, 'Difficulty increases over time');
+})();
+
+// ============================================================
+// TEST: Difficulty ramp
+// ============================================================
+section('Difficulty Ramp');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    // Check difficulty caps at 1
+    assert(track.difficulty <= 1, 'Difficulty capped at 1');
+
+    // Early segments have low difficulty
+    // segmentIndex after init = LOOK_AHEAD + LOOK_BEHIND + 20
+    // difficulty = min(1, segmentIndex * DIFFICULTY_RAMP)
+    const expectedDiff = Math.min(1, track.segmentIndex * CFG.DIFFICULTY_RAMP);
+    assertApprox(track.difficulty, expectedDiff, 0.001,
+        'Difficulty matches expected ramp value');
+})();
+
+// ============================================================
+// TEST: Track segments don't produce NaN/Infinity
+// ============================================================
+section('Numerical Stability');
+
+(() => {
+    const track = new Track();
+    track.init(400, 400);
+
+    // Generate many more segments
+    for (let i = 0; i < 500; i++) {
+        track.generateNext();
+    }
+
+    let allOk = true;
+    for (const seg of track.spine) {
+        if (!isFinite(seg.x) || !isFinite(seg.y) || !isFinite(seg.angle) || !isFinite(seg.width)) {
+            allOk = false;
+            break;
+        }
+    }
+    assert(allOk, 'No NaN/Infinity after generating 500+ extra segments');
+})();
+
+// ============================================================
+// Summary
+// ============================================================
+const summary = document.createElement('div');
+summary.className = 'summary ' + (passedTests === totalTests ? 'all-pass' : 'has-fail');
+summary.textContent = `${passedTests}/${totalTests} tests passed` +
+    (passedTests === totalTests ? ' — ALL PASS' : ` — ${totalTests - passedTests} FAILED`);
+resultsEl.appendChild(summary);
+
+console.log(`\n=== Track Tests: ${passedTests}/${totalTests} passed ===`);
+if (passedTests < totalTests) {
+    console.error(`${totalTests - passedTests} tests FAILED`);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drift Arrow – Utils Tests</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+        .pass { color: #0f0; }
+        .fail { color: #f33; font-weight: bold; }
+        h2 { color: #0ff; margin-top: 24px; }
+        .summary { margin-top: 20px; padding: 10px; border: 2px solid; font-size: 16px; }
+        .summary.all-pass { border-color: #0f0; }
+        .summary.has-fail { border-color: #f33; }
+    </style>
+</head>
+<body>
+<h1>Drift Arrow – Utils Tests</h1>
+<div id="results"></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script>
+'use strict';
+
+let totalTests = 0;
+let passedTests = 0;
+const resultsEl = document.getElementById('results');
+
+function section(name) {
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    resultsEl.appendChild(h2);
+}
+
+function assert(condition, description) {
+    totalTests++;
+    const div = document.createElement('div');
+    if (condition) {
+        passedTests++;
+        div.className = 'pass';
+        div.textContent = `  PASS: ${description}`;
+    } else {
+        div.className = 'fail';
+        div.textContent = `  FAIL: ${description}`;
+    }
+    resultsEl.appendChild(div);
+}
+
+function assertApprox(actual, expected, tolerance, description) {
+    assert(Math.abs(actual - expected) < tolerance, `${description} (got ${actual.toFixed(6)}, expected ~${expected})`);
+}
+
+// ============================================================
+// TEST: lerp
+// ============================================================
+section('lerp');
+
+(() => {
+    assertApprox(lerp(0, 10, 0), 0, 0.0001, 'lerp(0,10,0) = 0');
+    assertApprox(lerp(0, 10, 1), 10, 0.0001, 'lerp(0,10,1) = 10');
+    assertApprox(lerp(0, 10, 0.5), 5, 0.0001, 'lerp(0,10,0.5) = 5');
+    assertApprox(lerp(0, 10, 0.25), 2.5, 0.0001, 'lerp(0,10,0.25) = 2.5');
+    assertApprox(lerp(-10, 10, 0.5), 0, 0.0001, 'lerp(-10,10,0.5) = 0');
+    assertApprox(lerp(5, 5, 0.5), 5, 0.0001, 'lerp(5,5,0.5) = 5 (same values)');
+    // Extrapolation
+    assertApprox(lerp(0, 10, 2), 20, 0.0001, 'lerp(0,10,2) = 20 (extrapolation)');
+    assertApprox(lerp(0, 10, -1), -10, 0.0001, 'lerp(0,10,-1) = -10 (extrapolation below)');
+})();
+
+// ============================================================
+// TEST: clamp
+// ============================================================
+section('clamp');
+
+(() => {
+    assertApprox(clamp(5, 0, 10), 5, 0.0001, 'clamp(5,0,10) = 5 (within range)');
+    assertApprox(clamp(-5, 0, 10), 0, 0.0001, 'clamp(-5,0,10) = 0 (below min)');
+    assertApprox(clamp(15, 0, 10), 10, 0.0001, 'clamp(15,0,10) = 10 (above max)');
+    assertApprox(clamp(0, 0, 10), 0, 0.0001, 'clamp(0,0,10) = 0 (at min)');
+    assertApprox(clamp(10, 0, 10), 10, 0.0001, 'clamp(10,0,10) = 10 (at max)');
+    assertApprox(clamp(5, 5, 5), 5, 0.0001, 'clamp(5,5,5) = 5 (min == max)');
+    assertApprox(clamp(-100, -50, -10), -50, 0.0001, 'clamp(-100,-50,-10) = -50 (negative range)');
+})();
+
+// ============================================================
+// TEST: dist
+// ============================================================
+section('dist');
+
+(() => {
+    assertApprox(dist(0, 0, 3, 4), 5, 0.0001, 'dist(0,0,3,4) = 5 (3-4-5 triangle)');
+    assertApprox(dist(0, 0, 0, 0), 0, 0.0001, 'dist(0,0,0,0) = 0 (same point)');
+    assertApprox(dist(1, 1, 4, 5), 5, 0.0001, 'dist(1,1,4,5) = 5 (offset 3-4-5)');
+    assertApprox(dist(-3, -4, 0, 0), 5, 0.0001, 'dist(-3,-4,0,0) = 5 (negative coords)');
+    assertApprox(dist(0, 0, 1, 0), 1, 0.0001, 'dist along x-axis = 1');
+    assertApprox(dist(0, 0, 0, 1), 1, 0.0001, 'dist along y-axis = 1');
+})();
+
+// ============================================================
+// TEST: distPointToSeg
+// ============================================================
+section('distPointToSeg');
+
+(() => {
+    // Point on the segment
+    assertApprox(distPointToSeg(5, 0, 0, 0, 10, 0), 0, 0.0001,
+        'Point on horizontal segment = 0');
+
+    // Point perpendicular to segment midpoint
+    assertApprox(distPointToSeg(5, 3, 0, 0, 10, 0), 3, 0.0001,
+        'Point 3 above segment midpoint = 3');
+
+    // Point beyond segment start — clamps to endpoint A
+    assertApprox(distPointToSeg(-5, 0, 0, 0, 10, 0), 5, 0.0001,
+        'Point beyond segment start = 5');
+
+    // Point beyond segment end — clamps to endpoint B
+    assertApprox(distPointToSeg(15, 0, 0, 0, 10, 0), 5, 0.0001,
+        'Point beyond segment end = 5');
+
+    // Diagonal segment
+    assertApprox(distPointToSeg(0, 0, 0, 0, 10, 10), 0, 0.0001,
+        'Point at start of diagonal segment = 0');
+
+    // U-DPS-05 CRITICAL: Zero-length segment guard (prevents NaN)
+    const d = distPointToSeg(3, 4, 5, 5, 5, 5);
+    assert(!isNaN(d), 'Zero-length segment does NOT return NaN');
+    assertApprox(d, dist(3, 4, 5, 5), 0.0001,
+        'Zero-length segment returns dist to point');
+
+    // Zero-length segment at origin
+    const d2 = distPointToSeg(0, 0, 0, 0, 0, 0);
+    assert(!isNaN(d2), 'Zero-length segment at origin does NOT return NaN');
+    assertApprox(d2, 0, 0.0001, 'Zero-length segment at same point = 0');
+
+    // Point at endpoint A
+    assertApprox(distPointToSeg(0, 0, 0, 0, 10, 0), 0, 0.0001,
+        'Point at endpoint A = 0');
+
+    // Point at endpoint B
+    assertApprox(distPointToSeg(10, 0, 0, 0, 10, 0), 0, 0.0001,
+        'Point at endpoint B = 0');
+
+    // Point equidistant from both endpoints but off the segment
+    const dPerp = distPointToSeg(5, 10, 0, 0, 10, 0);
+    assertApprox(dPerp, 10, 0.0001, 'Point 10 above segment midpoint = 10');
+})();
+
+// ============================================================
+// TEST: normalizeAngle
+// ============================================================
+section('normalizeAngle');
+
+(() => {
+    assertApprox(normalizeAngle(0), 0, 0.0001, 'normalizeAngle(0) = 0');
+    assertApprox(normalizeAngle(Math.PI), Math.PI, 0.0001, 'normalizeAngle(PI) = PI');
+    assertApprox(normalizeAngle(-Math.PI), -Math.PI, 0.0001, 'normalizeAngle(-PI) = -PI');
+    assertApprox(normalizeAngle(Math.PI * 3), Math.PI, 0.0001, 'normalizeAngle(3PI) = PI');
+    assertApprox(normalizeAngle(-Math.PI * 3), -Math.PI, 0.0001, 'normalizeAngle(-3PI) = -PI');
+    assertApprox(normalizeAngle(Math.PI * 2), 0, 0.0001, 'normalizeAngle(2PI) = 0');
+    assertApprox(normalizeAngle(-Math.PI * 2), 0, 0.0001, 'normalizeAngle(-2PI) = 0');
+
+    // Large angles
+    assertApprox(normalizeAngle(Math.PI * 10), 0, 0.0001, 'normalizeAngle(10PI) = 0');
+    assertApprox(normalizeAngle(Math.PI * 2.5), Math.PI * 0.5, 0.0001, 'normalizeAngle(2.5PI) = 0.5PI');
+
+    // Result always in [-PI, PI]
+    for (let a = -20; a <= 20; a += 0.7) {
+        const n = normalizeAngle(a);
+        assert(n >= -Math.PI - 0.0001 && n <= Math.PI + 0.0001,
+            `normalizeAngle(${a.toFixed(2)}) in [-PI, PI]: ${n.toFixed(4)}`);
+    }
+})();
+
+// ============================================================
+// TEST: angleDiff (U-ANG-07 critical: wrap-around)
+// ============================================================
+section('angleDiff');
+
+(() => {
+    // Same angle
+    assertApprox(angleDiff(0, 0), 0, 0.0001, 'angleDiff(0, 0) = 0');
+
+    // Simple differences
+    assertApprox(angleDiff(0, Math.PI / 2), Math.PI / 2, 0.0001,
+        'angleDiff(0, PI/2) = PI/2');
+    assertApprox(angleDiff(0, -Math.PI / 2), -Math.PI / 2, 0.0001,
+        'angleDiff(0, -PI/2) = -PI/2');
+
+    // Wrap-around: shortest path from near +PI to near -PI should be small
+    const diff1 = angleDiff(Math.PI - 0.1, -Math.PI + 0.1);
+    assertApprox(diff1, 0.2, 0.0001,
+        'angleDiff wraps across +PI/-PI boundary (positive direction)');
+
+    const diff2 = angleDiff(-Math.PI + 0.1, Math.PI - 0.1);
+    assertApprox(diff2, -0.2, 0.0001,
+        'angleDiff wraps across -PI/+PI boundary (negative direction)');
+
+    // Full opposite direction
+    assertApprox(Math.abs(angleDiff(0, Math.PI)), Math.PI, 0.0001,
+        'angleDiff(0, PI) = PI (opposite)');
+
+    // Symmetry: angleDiff(a,b) = -angleDiff(b,a)
+    const a = 1.5, b = -1.2;
+    assertApprox(angleDiff(a, b), -angleDiff(b, a), 0.0001,
+        'angleDiff(a,b) = -angleDiff(b,a) (antisymmetric)');
+
+    // Result always in [-PI, PI]
+    for (let x = -10; x <= 10; x += 0.9) {
+        for (let y = -10; y <= 10; y += 0.9) {
+            const d = angleDiff(x, y);
+            assert(d >= -Math.PI - 0.0001 && d <= Math.PI + 0.0001,
+                `angleDiff(${x.toFixed(1)}, ${y.toFixed(1)}) in [-PI, PI]`);
+        }
+    }
+})();
+
+// ============================================================
+// TEST: valueNoise
+// ============================================================
+section('valueNoise');
+
+(() => {
+    // Output in range [-1, 1]
+    let allInRange = true;
+    for (let t = -100; t <= 100; t += 0.37) {
+        const v = valueNoise(t);
+        if (v < -1.001 || v > 1.001) { allInRange = false; break; }
+    }
+    assert(allInRange, 'valueNoise output always in [-1, 1]');
+
+    // Deterministic: same input = same output
+    assertApprox(valueNoise(42.5), valueNoise(42.5), 0.0001,
+        'valueNoise is deterministic');
+
+    // Different inputs produce different outputs (not constant)
+    const v1 = valueNoise(0);
+    const v2 = valueNoise(0.5);
+    const v3 = valueNoise(1);
+    assert(v1 !== v2 || v2 !== v3, 'valueNoise varies across inputs');
+
+    // Continuity: nearby inputs produce nearby outputs
+    const va = valueNoise(10.0);
+    const vb = valueNoise(10.001);
+    assert(Math.abs(va - vb) < 0.01, 'valueNoise is continuous (nearby inputs → nearby outputs)');
+
+    // Integer inputs are grid points
+    const vi0 = valueNoise(5.0);
+    const vi1 = valueNoise(5.0);
+    assertApprox(vi0, vi1, 0.0001, 'valueNoise consistent at integer boundaries');
+})();
+
+// ============================================================
+// TEST: distToArrowWings edge cases
+// ============================================================
+section('distToArrowWings Edge Cases');
+
+(() => {
+    // Arrow at origin, facing right
+    const ax = 0, ay = 0, facing = 0;
+
+    // Point exactly at center of arrow
+    const dCenter = distToArrowWings(0, 0, ax, ay, facing);
+    assert(dCenter >= 0, 'Distance from center is non-negative');
+    assert(isFinite(dCenter), 'Distance from center is finite');
+
+    // Point at very large distance
+    const dFar = distToArrowWings(1e6, 1e6, ax, ay, facing);
+    assert(isFinite(dFar), 'Distance to far point is finite');
+    assert(dFar > 1e5, 'Distance to far point is large');
+
+    // Arrow at very large coordinates
+    const dLargeArrow = distToArrowWings(1e6, 1e6, 1e6, 1e6, facing);
+    assert(isFinite(dLargeArrow), 'Works with large arrow coordinates');
+
+    // All four cardinal directions produce consistent results
+    const testDist = 20;
+    const d0 = distToArrowWings(testDist, 0, 0, 0, 0);
+    const dUp = distToArrowWings(0, -testDist, 0, 0, -Math.PI / 2);
+    const dLeft = distToArrowWings(-testDist, 0, 0, 0, Math.PI);
+    const dDown = distToArrowWings(0, testDist, 0, 0, Math.PI / 2);
+    assertApprox(d0, dUp, 0.001, 'Facing right vs up: same distance to point ahead');
+    assertApprox(d0, dLeft, 0.001, 'Facing right vs left: same distance to point ahead');
+    assertApprox(d0, dDown, 0.001, 'Facing right vs down: same distance to point ahead');
+})();
+
+// ============================================================
+// Summary
+// ============================================================
+const summary = document.createElement('div');
+summary.className = 'summary ' + (passedTests === totalTests ? 'all-pass' : 'has-fail');
+summary.textContent = `${passedTests}/${totalTests} tests passed` +
+    (passedTests === totalTests ? ' — ALL PASS' : ` — ${totalTests - passedTests} FAILED`);
+resultsEl.appendChild(summary);
+
+console.log(`\n=== Utils Tests: ${passedTests}/${totalTests} passed ===`);
+if (passedTests < totalTests) {
+    console.error(`${totalTests - passedTests} tests FAILED`);
+}
+</script>
+</body>
+</html>

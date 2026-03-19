@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run collision tests in headless browser
+      - name: Run all tests in headless browser
         run: |
           # Install a lightweight static file server and Puppeteer
           npm install --no-save puppeteer serve
@@ -27,7 +27,7 @@ jobs:
           SERVER_PID=$!
           sleep 2
 
-          # Run the tests using Puppeteer and capture console output
+          # Run all test files using Puppeteer
           node -e "
           const puppeteer = require('puppeteer');
           (async () => {
@@ -35,42 +35,61 @@ jobs:
               headless: true,
               args: ['--no-sandbox', '--disable-setuid-sandbox']
             });
-            const page = await browser.newPage();
 
-            let testOutput = '';
-            let hasFailed = false;
+            const testFiles = [
+              'collision-tests.html',
+              'utils-tests.html',
+              'arrow-tests.html',
+              'hazard-tests.html',
+              'track-tests.html',
+              'token-tests.html',
+              'game-state-tests.html'
+            ];
 
-            page.on('console', msg => {
-              const text = msg.text();
-              console.log(text);
-              testOutput += text + '\n';
-            });
+            let allPassed = true;
 
-            page.on('pageerror', err => {
-              console.error('Page error:', err.message);
-              hasFailed = true;
-            });
+            for (const file of testFiles) {
+              console.log('\n--- Running ' + file + ' ---');
+              const page = await browser.newPage();
+              let hasFailed = false;
 
-            await page.goto('http://localhost:8080/tests/collision-tests.html', {
-              waitUntil: 'networkidle0',
-              timeout: 30000
-            });
+              page.on('console', msg => {
+                const text = msg.text();
+                console.log(text);
+              });
 
-            // Wait for tests to complete
-            await page.waitForSelector('.summary', { timeout: 15000 });
+              page.on('pageerror', err => {
+                console.error('Page error:', err.message);
+                hasFailed = true;
+              });
 
-            const allPass = await page.evaluate(() => {
-              const summary = document.querySelector('.summary');
-              return summary && summary.classList.contains('all-pass');
-            });
+              await page.goto('http://localhost:8080/tests/' + file, {
+                waitUntil: 'networkidle0',
+                timeout: 30000
+              });
+
+              await page.waitForSelector('.summary', { timeout: 15000 });
+
+              const pass = await page.evaluate(() => {
+                const summary = document.querySelector('.summary');
+                return summary && summary.classList.contains('all-pass');
+              });
+
+              if (!pass || hasFailed) {
+                console.error(file + ' FAILED');
+                allPassed = false;
+              }
+
+              await page.close();
+            }
 
             await browser.close();
 
-            if (!allPass || hasFailed) {
-              console.error('\nTests FAILED');
+            if (!allPassed) {
+              console.error('\nSome tests FAILED');
               process.exit(1);
             }
-            console.log('\nAll tests passed');
+            console.log('\nAll test suites passed');
           })();
           "
 
