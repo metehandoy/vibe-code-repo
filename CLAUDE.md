@@ -24,10 +24,11 @@ Drift Arrow is a neon synthwave endless drifting browser game. The player contro
 ├── dist/
 │   └── mobile.html         # Single-file build (auto-generated, works offline)
 ├── docs/
-│   ├── repo-behavior.md    # Repository behavior documentation
-│   ├── repo-risk-map.md    # Risk map documentation
-│   ├── repo-survey.md      # Repository survey
-│   └── testing-plan.md     # Testing plan documentation
+│   ├── README.md           # Documentation index with links to all docs
+│   ├── survey.md           # Repository survey (tech stack, file catalog)
+│   ├── behavior/           # Runtime behavior analysis (8 files by system)
+│   ├── risk/               # Risk & complexity analysis (6 files by category)
+│   └── testing/            # Testing plan (~200 specs, 17 files by system/type)
 ├── tests/
 │   └── collision-tests.html  # Headless collision/geometry tests (imports js/ modules)
 ├── scripts/

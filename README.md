@@ -58,10 +58,11 @@ game with your changes. Settings are saved to `localStorage`.
 ├── dist/
 │   └── mobile.html         # Single-file build (auto-generated, works offline)
 ├── docs/
-│   ├── repo-behavior.md    # Repository behavior documentation
-│   ├── repo-risk-map.md    # Risk map documentation
-│   ├── repo-survey.md      # Repository survey
-│   └── testing-plan.md     # Testing plan documentation
+│   ├── README.md           # Documentation index
+│   ├── survey.md           # Repository survey
+│   ├── behavior/           # Runtime behavior analysis (8 files)
+│   ├── risk/               # Risk & complexity analysis (6 files)
+│   └── testing/            # Testing plan (17 files)
 ├── tests/
 │   └── collision-tests.html  # Headless collision/geometry tests
 ├── scripts/
