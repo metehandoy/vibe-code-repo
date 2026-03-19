@@ -2553,8 +2553,8 @@ function showParamTooltip(labelEl, key) {
     tip.style.left = left + 'px';
     tip.style.top = top + 'px';
     activeTooltip = tip;
-    // Auto-hide after 3 seconds
-    tip._timer = setTimeout(hideParamTooltip, 3000);
+    // Auto-hide after 5 seconds
+    tip._timer = setTimeout(hideParamTooltip, 5000);
 }
 function hideParamTooltip() {
     if (activeTooltip) {
