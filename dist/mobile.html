@@ -1624,10 +1624,12 @@ class Game {
             };
         }
 
-        // Snap camera immediately to start position
-        const lookAheadDist = 80;
-        this.camX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist - this.canvas.width / 2;
-        this.camY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist - this.canvas.height / 2;
+        // Snap camera immediately to start position (matching directional offset logic)
+        const snapDirX = Math.cos(this.arrow.moveAngle);
+        const snapDirY = Math.sin(this.arrow.moveAngle);
+        const snapFraction = 0.28;
+        this.camX = this.arrow.x + snapDirX * 40 + snapDirX * this.canvas.width * snapFraction - this.canvas.width / 2;
+        this.camY = this.arrow.y + snapDirY * 40 + snapDirY * this.canvas.height * snapFraction - this.canvas.height / 2;
         this.camZoom = 1;
 
         // Enter countdown state
@@ -1847,7 +1849,7 @@ class Game {
         // Time flash decay
         if (this.timeFlash > 0) this.timeFlash -= dt60;
 
-        // Camera: speed-adaptive zoom, curvature-aware look-ahead
+        // Camera: speed-adaptive zoom, directional positioning, curvature-aware
         const effectiveSpeed = CFG.ARROW_SPEED * this.arrow.speedMult;
         const baseSpeed = 3.5;
         const speedRatio = effectiveSpeed / baseSpeed;
@@ -1856,10 +1858,21 @@ class Game {
         const targetZoom = clamp(1 / Math.pow(speedRatio, 0.35), 0.55, 1.15);
         this.camZoom = lerp(this.camZoom, targetZoom, 0.05 * dt60);
 
-        // Look-ahead: scales with speed so fast arrows see further ahead
-        const lookAheadDist = 80 + 50 * Math.max(0, speedRatio - 1);
+        // Movement direction components
+        const dirX = Math.cos(this.arrow.moveAngle);
+        const dirY = Math.sin(this.arrow.moveAngle);
 
-        // Curvature offset: sample upcoming track to bias camera toward curves
+        // Position arrow opposite to movement direction on screen:
+        // moving up → arrow near bottom, moving right → arrow near left, etc.
+        const screenFraction = 0.28;
+        const screenOffX = dirX * this.canvas.width * screenFraction;
+        const screenOffY = dirY * this.canvas.height * screenFraction;
+
+        // Additional world-space look-ahead (scales with speed)
+        const lookAheadDist = 40 + 30 * Math.max(0, speedRatio - 1);
+
+        // Curvature offset: bias camera toward upcoming curves
+        // e.g. going up + curving right → arrow shifts toward bottom-left
         let curveOffX = 0, curveOffY = 0;
         const closestSeg = this.track.findClosest(this.arrow.x, this.arrow.y);
         if (closestSeg) {
@@ -1874,16 +1887,16 @@ class Game {
             if (count > 0) {
                 const avgCurve = totalCurve / count;
                 const perpAngle = this.arrow.moveAngle + Math.PI / 2;
-                const offsetStrength = clamp(Math.abs(avgCurve) * 150, 0, 80);
-                const dir = avgCurve > 0 ? 1 : -1;
-                curveOffX = Math.cos(perpAngle) * offsetStrength * dir;
-                curveOffY = Math.sin(perpAngle) * offsetStrength * dir;
+                const curveStrength = clamp(Math.abs(avgCurve) * 200, 0, 100);
+                const curveDir = avgCurve > 0 ? 1 : -1;
+                curveOffX = Math.cos(perpAngle) * curveStrength * curveDir;
+                curveOffY = Math.sin(perpAngle) * curveStrength * curveDir;
             }
         }
 
-        // Use moveAngle for camera so it doesn't swing with steering
-        const targetCamX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist + curveOffX - this.canvas.width / 2;
-        const targetCamY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist + curveOffY - this.canvas.height / 2;
+        // Combine: center on arrow, then shift by look-ahead + screen offset + curvature
+        const targetCamX = this.arrow.x + dirX * lookAheadDist + screenOffX + curveOffX - this.canvas.width / 2;
+        const targetCamY = this.arrow.y + dirY * lookAheadDist + screenOffY + curveOffY - this.canvas.height / 2;
         // Camera lerp: faster at high speeds to prevent lag-behind
         const baseCamSpeed = this.arrow.drifting ? 0.04 : 0.07;
         const camSpeed = baseCamSpeed + 0.03 * Math.max(0, speedRatio - 1);
