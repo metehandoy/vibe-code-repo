@@ -44,6 +44,7 @@ Identified risks, complexity hotspots, and fragile areas.
   - [**unit-tests-particles.md**](testing/unit-tests-particles.md) — Particles: emit, update
   - [**unit-tests-audio.md**](testing/unit-tests-audio.md) — Audio: _ensure, startDrift/stopDrift lifecycle
   - [**unit-tests-config.md**](testing/unit-tests-config.md) — Config: CFG defaults, falsy guard (**fixed**), _formatDist
+  - [**unit-tests-camera.md**](testing/unit-tests-camera.md) — Camera system: zoom, directional positioning, look-ahead, curvature offset, lerp speed, start snap
 - [**integration-tests.md**](testing/integration-tests.md) — 8 integration test suites covering system boundaries
 - [**mobile-tests.md**](testing/mobile-tests.md) — Touch, viewport, performance, lifecycle, audio, browser matrix tests
 - [**e2e-tests.md**](testing/e2e-tests.md) — 10 end-to-end scenarios (full gameplay, wall death, tokens, hazards, stress)

@@ -24,3 +24,4 @@ This directory contains the Drift Arrow testing plan, split into individual sect
 - [Particles (particles.js)](unit-tests-particles.md) - Unit tests for particle emission and update lifecycle
 - [Audio (audio.js)](unit-tests-audio.md) - Unit tests for AudioContext ensure, drift sound start/stop lifecycle
 - [Config (config.js + tokens.js)](unit-tests-config.md) - Unit tests for CFG defaults, falsy-guard bug, and _formatDist
+- [Camera System (game.js)](unit-tests-camera.md) - Unit tests for zoom, directional positioning, look-ahead, curvature offset, lerp speed, and start snap

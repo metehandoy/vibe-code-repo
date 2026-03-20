@@ -62,11 +62,12 @@ game with your changes. Settings are saved to `localStorage`.
 │   ├── survey.md           # Repository survey
 │   ├── behavior/           # Runtime behavior analysis (8 files)
 │   ├── risk/               # Risk & complexity analysis (6 files)
-│   └── testing/            # Testing plan (17 files)
+│   └── testing/            # Testing plan (18 files)
 ├── tests/
-│   └── collision-tests.html  # Headless collision/geometry tests
+│   ├── collision-tests.html  # Collision/geometry tests
+│   └── camera-tests.html    # Camera zoom, positioning & look-ahead tests
 ├── scripts/
 │   ├── sync-dev.py         # Syncs JS modules into dev.html
 │   └── build-mobile.py     # Merges JS modules into dist/mobile.html
 └── .github/workflows/
-    └── ci.yml              # CI: collision tests + HTML validation
+    └── ci.yml              # CI: all test suites + HTML validation

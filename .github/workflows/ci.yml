@@ -43,7 +43,8 @@ jobs:
               'hazard-tests.html',
               'track-tests.html',
               'token-tests.html',
-              'game-state-tests.html'
+              'game-state-tests.html',
+              'camera-tests.html'
             ];
 
             let allPassed = true;

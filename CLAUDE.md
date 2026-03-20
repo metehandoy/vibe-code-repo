@@ -28,14 +28,15 @@ Drift Arrow is a neon synthwave endless drifting browser game. The player contro
 │   ├── survey.md           # Repository survey (tech stack, file catalog)
 │   ├── behavior/           # Runtime behavior analysis (8 files by system)
 │   ├── risk/               # Risk & complexity analysis (6 files by category)
-│   └── testing/            # Testing plan (~200 specs, 17 files by system/type)
+│   └── testing/            # Testing plan (~245 specs, 18 files by system/type)
 ├── tests/
-│   └── collision-tests.html  # Headless collision/geometry tests (imports js/ modules)
+│   ├── collision-tests.html  # Collision/geometry tests (imports js/ modules)
+│   └── camera-tests.html    # Camera zoom, positioning & look-ahead tests
 ├── scripts/
 │   ├── sync-dev.py         # Concatenates js/.js into dev.html with patches
 │   └── build-mobile.py     # Merges js/.js into single dist/mobile.html
 ├── .github/workflows/
-│   └── ci.yml              # CI: collision tests + file validation
+│   └── ci.yml              # CI: all test suites + file validation
 ├── README.md               # Player-facing documentation
 └── CLAUDE.md               # This file
 There is no build system, no package manager, no bundler. The game runs by opening `index.html` via a local server (needed for `<script src>` loading), or by opening `dist/mobile.html` directly in a browser (works with `file://`).
@@ -111,7 +112,12 @@ The markers in `dev.html` that delimit the game code section:
 It reads `index.html` for the HTML shell, reads all `js/*.js` files in order, strips per-file `'use strict'` directives, and combines everything into a single `dist/mobile.html` with one inline `<script>` block. This file has zero external dependencies and works with `file://`.
 
 ### Running Tests
-Tests are in `tests/collision-tests.html`. They import `js/config.js`, `js/utils.js`, and `js/tokens.js` directly and test collision geometry, token collection, hazard detection, and wall hits. CI runs them headlessly via Puppeteer.
+Tests are in `tests/`. Each test file is a standalone HTML page that imports the needed `js/*.js` modules and runs assertions in-browser. CI runs them all headlessly via Puppeteer.
+
+- `collision-tests.html` — collision geometry, token collection, hazard detection, wall hits
+- `camera-tests.html` — camera zoom, directional positioning, look-ahead, curvature offset, lerp speed, start snap
+
+Additional test suites: `utils-tests.html`, `arrow-tests.html`, `hazard-tests.html`, `track-tests.html`, `token-tests.html`, `game-state-tests.html`.
 
 ## Key Conventions
 
