@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drift Arrow – Camera System Tests</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+        .pass { color: #0f0; }
+        .fail { color: #f33; font-weight: bold; }
+        h2 { color: #0ff; margin-top: 24px; }
+        .summary { margin-top: 20px; padding: 10px; border: 2px solid; font-size: 16px; }
+        .summary.all-pass { border-color: #0f0; }
+        .summary.has-fail { border-color: #f33; }
+    </style>
+</head>
+<body>
+<h1>Drift Arrow – Camera System Tests</h1>
+<div id="results"></div>
+
+<!-- Load all game modules in order -->
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/track.js"></script>
+<script src="../js/arrow.js"></script>
+<script src="../js/particles.js"></script>
+<script src="../js/tokens.js"></script>
+<script src="../js/hazards.js"></script>
+<script src="../js/input.js"></script>
+<script src="../js/audio.js"></script>
+<script src="../js/renderer.js"></script>
+<script src="../js/game.js"></script>
+<script>
+'use strict';
+
+let totalTests = 0;
+let passedTests = 0;
+const resultsEl = document.getElementById('results');
+
+function section(name) {
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    resultsEl.appendChild(h2);
+}
+
+function assert(condition, description) {
+    totalTests++;
+    const div = document.createElement('div');
+    if (condition) {
+        passedTests++;
+        div.className = 'pass';
+        div.textContent = `  PASS: ${description}`;
+    } else {
+        div.className = 'fail';
+        div.textContent = `  FAIL: ${description}`;
+    }
+    resultsEl.appendChild(div);
+}
+
+function assertApprox(actual, expected, tolerance, description) {
+    assert(Math.abs(actual - expected) < tolerance, `${description} (got ${actual.toFixed(6)}, expected ~${expected})`);
+}
+
+// Create a Game instance with mocked audio
+function createTestGame() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 800;
+    canvas.height = 600;
+    const game = new Game(canvas);
+    game.audio.init = () => {};
+    game.audio.wallHit = () => {};
+    game.audio.startDrift = () => {};
+    game.audio.stopDrift = () => {};
+    game.audio.updateDrift = () => {};
+    game.audio.tokenCollect = () => {};
+    return game;
+}
+
+// Helper: compute targetZoom for a given speedRatio
+function computeTargetZoom(speedRatio) {
+    return clamp(1 / Math.pow(speedRatio, 0.35), 0.55, 1.15);
+}
+
+// Helper: compute lookAheadDist for a given speedRatio
+function computeLookAhead(speedRatio) {
+    return 40 + 30 * Math.max(0, speedRatio - 1);
+}
+
+// Helper: compute camera lerp speed
+function computeCamSpeed(speedRatio, drifting) {
+    const baseCamSpeed = drifting ? 0.04 : 0.07;
+    return baseCamSpeed + 0.03 * Math.max(0, speedRatio - 1);
+}
+
+// ============================================================
+// TEST: Zoom calculation
+// ============================================================
+section('Zoom Calculation');
+
+(() => {
+    // Default speed: ARROW_SPEED=3.5, speedMult=1.0, ratio=1.0
+    const zoom1 = computeTargetZoom(1.0);
+    assertApprox(zoom1, 1.0, 0.001, 'Default speed (ratio=1.0) → zoom ≈ 1.0');
+
+    // Boost: speedMult=1.35, ratio = 3.5*1.35 / 3.5 = 1.35
+    const zoomBoost = computeTargetZoom(1.35);
+    assert(zoomBoost < 1.0, `Boost speed (ratio=1.35) → zoom out (got ${zoomBoost.toFixed(4)} < 1.0)`);
+
+    // Slow: speedMult=0.55, ratio = 3.5*0.55 / 3.5 = 0.55
+    const zoomSlow = computeTargetZoom(0.55);
+    assert(zoomSlow > 1.0, `Slow speed (ratio=0.55) → zoom in (got ${zoomSlow.toFixed(4)} > 1.0)`);
+
+    // High ARROW_SPEED: speed=10, speedMult=1.0, ratio = 10/3.5 ≈ 2.857
+    const zoomHigh = computeTargetZoom(10 / 3.5);
+    assert(zoomHigh < 0.75, `High speed (ratio≈2.86) → zoom < 0.75 (got ${zoomHigh.toFixed(4)})`);
+
+    // Extreme speed: clamp floor at 0.55
+    const zoomExtreme = computeTargetZoom(10 * 1.35 / 3.5);
+    assert(zoomExtreme >= 0.55, `Extreme speed clamped at floor 0.55 (got ${zoomExtreme.toFixed(4)})`);
+
+    // Very slow: clamp ceiling at 1.15
+    const zoomVerySlow = computeTargetZoom(3.5 * 0.05 / 3.5);
+    assert(zoomVerySlow <= 1.15, `Very slow speed clamped at ceiling 1.15 (got ${zoomVerySlow.toFixed(4)})`);
+
+    // Monotonicity: faster speed → lower zoom
+    const z1 = computeTargetZoom(0.5);
+    const z2 = computeTargetZoom(1.0);
+    const z3 = computeTargetZoom(2.0);
+    assert(z1 > z2 && z2 > z3, 'Zoom is monotonically decreasing with speed');
+})();
+
+// ============================================================
+// TEST: Directional screen offset
+// ============================================================
+section('Directional Screen Offset');
+
+(() => {
+    const screenW = 800, screenH = 600;
+    const fraction = 0.28;
+
+    // Moving up (angle = -PI/2): cos≈0, sin=-1
+    const upDirX = Math.cos(-Math.PI / 2);
+    const upDirY = Math.sin(-Math.PI / 2);
+    const upOffX = upDirX * screenW * fraction;
+    const upOffY = upDirY * screenH * fraction;
+    assertApprox(upOffX, 0, 0.01, 'Moving up → screenOffX ≈ 0');
+    assert(upOffY < 0, `Moving up → screenOffY < 0 (got ${upOffY.toFixed(2)}, camera shifts up → arrow near bottom)`);
+
+    // Moving right (angle = 0): cos=1, sin=0
+    const rightDirX = Math.cos(0);
+    const rightDirY = Math.sin(0);
+    const rightOffX = rightDirX * screenW * fraction;
+    const rightOffY = rightDirY * screenH * fraction;
+    assert(rightOffX > 0, `Moving right → screenOffX > 0 (got ${rightOffX.toFixed(2)}, camera shifts right → arrow near left)`);
+    assertApprox(rightOffY, 0, 0.01, 'Moving right → screenOffY ≈ 0');
+
+    // Moving down (angle = PI/2): cos≈0, sin=1
+    const downDirY = Math.sin(Math.PI / 2);
+    const downOffY = downDirY * screenH * fraction;
+    assert(downOffY > 0, `Moving down → screenOffY > 0 (got ${downOffY.toFixed(2)})`);
+
+    // Moving left (angle = PI): cos=-1, sin≈0
+    const leftDirX = Math.cos(Math.PI);
+    const leftOffX = leftDirX * screenW * fraction;
+    assert(leftOffX < 0, `Moving left → screenOffX < 0 (got ${leftOffX.toFixed(2)})`);
+
+    // Magnitude check
+    assertApprox(Math.abs(rightOffX), screenW * fraction, 0.01, 'Right offset magnitude = 28% of screen width');
+    assertApprox(Math.abs(upOffY), screenH * fraction, 0.01, 'Up offset magnitude = 28% of screen height');
+
+    // Diagonal (PI/4 = down-right): both components positive
+    const diagDirX = Math.cos(Math.PI / 4);
+    const diagDirY = Math.sin(Math.PI / 4);
+    const diagOffX = diagDirX * screenW * fraction;
+    const diagOffY = diagDirY * screenH * fraction;
+    assert(diagOffX > 0 && diagOffY > 0, `Diagonal (down-right) → both offsets positive (${diagOffX.toFixed(2)}, ${diagOffY.toFixed(2)})`);
+})();
+
+// ============================================================
+// TEST: Look-ahead distance
+// ============================================================
+section('Look-Ahead Distance');
+
+(() => {
+    // Default speed (ratio=1) → 40
+    assertApprox(computeLookAhead(1.0), 40, 0.001, 'Default speed (ratio=1.0) → lookAhead = 40');
+
+    // Double speed (ratio=2) → 40 + 30*1 = 70
+    assertApprox(computeLookAhead(2.0), 70, 0.001, 'Double speed (ratio=2.0) → lookAhead = 70');
+
+    // Below default (ratio=0.5) → clamped at 40 (no shrinkage)
+    assertApprox(computeLookAhead(0.5), 40, 0.001, 'Slow speed (ratio=0.5) → lookAhead = 40 (does not shrink)');
+
+    // Triple speed (ratio=3) → 40 + 30*2 = 100
+    assertApprox(computeLookAhead(3.0), 100, 0.001, 'Triple speed (ratio=3.0) → lookAhead = 100');
+
+    // Monotonicity above ratio=1
+    const la1 = computeLookAhead(1.0);
+    const la2 = computeLookAhead(1.5);
+    const la3 = computeLookAhead(2.0);
+    assert(la1 < la2 && la2 < la3, 'Look-ahead increases monotonically above ratio=1');
+})();
+
+// ============================================================
+// TEST: Camera lerp speed
+// ============================================================
+section('Camera Lerp Speed');
+
+(() => {
+    // Normal, not drifting, ratio=1
+    assertApprox(computeCamSpeed(1.0, false), 0.07, 0.001, 'Normal speed, not drifting → camSpeed = 0.07');
+
+    // Normal, drifting, ratio=1
+    assertApprox(computeCamSpeed(1.0, true), 0.04, 0.001, 'Normal speed, drifting → camSpeed = 0.04');
+
+    // High speed, not drifting, ratio=2
+    assertApprox(computeCamSpeed(2.0, false), 0.10, 0.001, 'Double speed, not drifting → camSpeed = 0.10');
+
+    // Below default, not drifting, ratio=0.5
+    assertApprox(computeCamSpeed(0.5, false), 0.07, 0.001, 'Slow speed → camSpeed = 0.07 (no reduction below base)');
+
+    // High speed, drifting
+    assertApprox(computeCamSpeed(2.0, true), 0.07, 0.001, 'Double speed, drifting → camSpeed = 0.07');
+
+    // Monotonicity above ratio=1
+    const cs1 = computeCamSpeed(1.0, false);
+    const cs2 = computeCamSpeed(2.0, false);
+    const cs3 = computeCamSpeed(3.0, false);
+    assert(cs1 < cs2 && cs2 < cs3, 'Lerp speed increases with speed ratio');
+})();
+
+// ============================================================
+// TEST: Curvature offset
+// ============================================================
+section('Curvature Offset');
+
+(() => {
+    // Straight track: all segments same angle → curveOff = (0, 0)
+    const straightSpine = [];
+    for (let i = 0; i < 50; i++) {
+        straightSpine.push({ x: 0, y: -i * 12, angle: -Math.PI / 2, width: 140, index: i });
+    }
+    const baseSeg = straightSpine[5];
+    let totalCurve = 0, count = 0;
+    for (const s of straightSpine) {
+        const ahead = s.index - baseSeg.index;
+        if (ahead > 2 && ahead < 40) {
+            totalCurve += angleDiff(baseSeg.angle, s.angle);
+            count++;
+        }
+    }
+    assertApprox(totalCurve, 0, 0.001, 'Straight track → totalCurve = 0');
+
+    // Right curve while moving up: segments bend rightward (angle increases toward 0)
+    const rightCurveSpine = [];
+    for (let i = 0; i < 50; i++) {
+        const curveAngle = -Math.PI / 2 + i * 0.02; // gradually turning right
+        rightCurveSpine.push({ x: 0, y: -i * 12, angle: curveAngle, width: 140, index: i });
+    }
+    const rcBaseSeg = rightCurveSpine[5];
+    let rcTotalCurve = 0, rcCount = 0;
+    for (const s of rightCurveSpine) {
+        const ahead = s.index - rcBaseSeg.index;
+        if (ahead > 2 && ahead < 40) {
+            rcTotalCurve += angleDiff(rcBaseSeg.angle, s.angle);
+            rcCount++;
+        }
+    }
+    const rcAvgCurve = rcTotalCurve / rcCount;
+    assert(rcAvgCurve > 0, `Right curve → positive avgCurve (got ${rcAvgCurve.toFixed(4)})`);
+
+    // Compute perpendicular offset for moving up + right curve
+    const moveAngle = -Math.PI / 2;
+    const perpAngle = moveAngle + Math.PI / 2;
+    const curveStrength = clamp(Math.abs(rcAvgCurve) * 200, 0, 100);
+    const curveDir = rcAvgCurve > 0 ? 1 : -1;
+    const curveOffX = Math.cos(perpAngle) * curveStrength * curveDir;
+    const curveOffY = Math.sin(perpAngle) * curveStrength * curveDir;
+    assert(curveOffX > 0, `Moving up + right curve → curveOffX > 0 (got ${curveOffX.toFixed(4)}, camera shifts right → arrow left)`);
+    assertApprox(curveOffY, 0, 0.01, 'Moving up + right curve → curveOffY ≈ 0');
+
+    // Left curve while moving up: segments bend leftward (angle decreases)
+    const leftCurveSpine = [];
+    for (let i = 0; i < 50; i++) {
+        const curveAngle = -Math.PI / 2 - i * 0.02;
+        leftCurveSpine.push({ x: 0, y: -i * 12, angle: curveAngle, width: 140, index: i });
+    }
+    const lcBaseSeg = leftCurveSpine[5];
+    let lcTotalCurve = 0, lcCount = 0;
+    for (const s of leftCurveSpine) {
+        const ahead = s.index - lcBaseSeg.index;
+        if (ahead > 2 && ahead < 40) {
+            lcTotalCurve += angleDiff(lcBaseSeg.angle, s.angle);
+            lcCount++;
+        }
+    }
+    const lcAvgCurve = lcTotalCurve / lcCount;
+    assert(lcAvgCurve < 0, `Left curve → negative avgCurve (got ${lcAvgCurve.toFixed(4)})`);
+
+    // Curvature strength cap at 100
+    const hugeAvgCurve = 2.0; // unrealistically large
+    const cappedStrength = clamp(Math.abs(hugeAvgCurve) * 200, 0, 100);
+    assertApprox(cappedStrength, 100, 0.001, 'Extreme curvature → strength capped at 100');
+})();
+
+// ============================================================
+// TEST: Camera target composition
+// ============================================================
+section('Camera Target Composition');
+
+(() => {
+    const screenW = 800, screenH = 600;
+    const fraction = 0.28;
+
+    // Moving up, straight track: arrow should appear in bottom half
+    const moveAngle = -Math.PI / 2;
+    const dirX = Math.cos(moveAngle);
+    const dirY = Math.sin(moveAngle);
+    const arrowX = 400, arrowY = 300;
+    const lookAhead = 40; // ratio=1
+    const targetCamX = arrowX + dirX * lookAhead + dirX * screenW * fraction - screenW / 2;
+    const targetCamY = arrowY + dirY * lookAhead + dirY * screenH * fraction - screenH / 2;
+    // Arrow screen position = arrowX - camX, arrowY - camY
+    const arrowScreenX = arrowX - targetCamX;
+    const arrowScreenY = arrowY - targetCamY;
+    assert(arrowScreenY > screenH / 2, `Moving up → arrow in bottom half (screenY=${arrowScreenY.toFixed(1)} > ${screenH / 2})`);
+    assertApprox(arrowScreenX, screenW / 2, 1, 'Moving up → arrow horizontally centered');
+
+    // Moving right, straight track: arrow should appear in left half
+    const moveRight = 0;
+    const drx = Math.cos(moveRight), dry = Math.sin(moveRight);
+    const tcrx = arrowX + drx * lookAhead + drx * screenW * fraction - screenW / 2;
+    const tcry = arrowY + dry * lookAhead + dry * screenH * fraction - screenH / 2;
+    const asrx = arrowX - tcrx;
+    const asry = arrowY - tcry;
+    assert(asrx < screenW / 2, `Moving right → arrow in left half (screenX=${asrx.toFixed(1)} < ${screenW / 2})`);
+    assertApprox(asry, screenH / 2, 1, 'Moving right → arrow vertically centered');
+
+    // Moving up + right curvature → arrow near bottom-left
+    const curveOffX = 30; // positive = right curve pushes camera right
+    const curveOffY = 0;
+    const tcxCurve = arrowX + dirX * lookAhead + dirX * screenW * fraction + curveOffX - screenW / 2;
+    const tcyCurve = arrowY + dirY * lookAhead + dirY * screenH * fraction + curveOffY - screenH / 2;
+    const asxCurve = arrowX - tcxCurve;
+    const asyCurve = arrowY - tcyCurve;
+    assert(asyCurve > screenH / 2, 'Up + right curve → arrow in bottom half');
+    assert(asxCurve < screenW / 2, 'Up + right curve → arrow in left half (bottom-left)');
+
+    // Moving up + left curvature → arrow near bottom-right
+    const tcxCurveL = arrowX + dirX * lookAhead + dirX * screenW * fraction + (-30) - screenW / 2;
+    const asxCurveL = arrowX - tcxCurveL;
+    assert(asxCurveL > screenW / 2, 'Up + left curve → arrow in right half (bottom-right)');
+})();
+
+// ============================================================
+// TEST: Start camera snap consistency
+// ============================================================
+section('Start Camera Snap');
+
+(() => {
+    const game = createTestGame();
+    game.startGame();
+
+    // After startGame, arrow faces up (≈ -PI/2)
+    const moveAngle = game.arrow.moveAngle;
+    const dirX = Math.cos(moveAngle);
+    const dirY = Math.sin(moveAngle);
+    const screenW = game.canvas.width;
+    const screenH = game.canvas.height;
+    const fraction = 0.28;
+
+    // Expected snap position
+    const expectedCamX = game.arrow.x + dirX * 40 + dirX * screenW * fraction - screenW / 2;
+    const expectedCamY = game.arrow.y + dirY * 40 + dirY * screenH * fraction - screenH / 2;
+
+    assertApprox(game.camX, expectedCamX, 0.01, 'Start snap camX matches expected formula');
+    assertApprox(game.camY, expectedCamY, 0.01, 'Start snap camY matches expected formula');
+    assertApprox(game.camZoom, 1.0, 0.001, 'Start snap camZoom = 1.0');
+
+    // Arrow should appear in bottom half (since initial move direction is up)
+    const arrowScreenY = game.arrow.y - game.camY;
+    assert(arrowScreenY > screenH / 2, `Start snap positions arrow in bottom half (screenY=${arrowScreenY.toFixed(1)})`);
+})();
+
+// ============================================================
+// TEST: Zoom smoothing (multi-frame convergence)
+// ============================================================
+section('Zoom Smoothing');
+
+(() => {
+    // Simulate zoom lerp over multiple frames
+    let camZoom = 1.0;
+    const targetZoom = 0.75; // as if speed increased
+    const dt60 = 1.0;
+
+    // After 1 frame
+    camZoom = lerp(camZoom, targetZoom, 0.05 * dt60);
+    const after1 = camZoom;
+    assert(after1 < 1.0 && after1 > targetZoom, `After 1 frame: zoom between 1.0 and target (got ${after1.toFixed(4)})`);
+
+    // After 20 frames
+    for (let i = 0; i < 19; i++) {
+        camZoom = lerp(camZoom, targetZoom, 0.05 * dt60);
+    }
+    const after20 = camZoom;
+    assert(after20 < after1, `After 20 frames: zoom closer to target (got ${after20.toFixed(4)})`);
+    assert(after20 > targetZoom, `After 20 frames: zoom hasn't overshot (got ${after20.toFixed(4)} > ${targetZoom})`);
+
+    // After 100 frames: should be very close to target
+    for (let i = 0; i < 80; i++) {
+        camZoom = lerp(camZoom, targetZoom, 0.05 * dt60);
+    }
+    assertApprox(camZoom, targetZoom, 0.01, 'After 100 frames: zoom converged to target');
+})();
+
+// ============================================================
+// TEST: Integrated camera update via Game
+// ============================================================
+section('Integrated Camera Update');
+
+(() => {
+    const game = createTestGame();
+    game.startGame();
+    game.state = STATE.PLAYING;
+
+    const initialCamX = game.camX;
+    const initialCamY = game.camY;
+    const initialZoom = game.camZoom;
+
+    // Run several frames of updatePlaying
+    for (let i = 0; i < 30; i++) {
+        game.updatePlaying(1.0);
+        if (game.state !== STATE.PLAYING) break;
+    }
+
+    // Camera should have moved (arrow moves forward)
+    const camMoved = (game.camX !== initialCamX || game.camY !== initialCamY);
+    assert(camMoved, 'Camera position updates during gameplay');
+
+    // Zoom should be close to 1.0 at default speed
+    assertApprox(game.camZoom, 1.0, 0.15, 'Zoom stays near 1.0 at default speed');
+})();
+
+(() => {
+    // Test with high ARROW_SPEED: zoom should decrease
+    const origSpeed = CFG.ARROW_SPEED;
+    CFG.ARROW_SPEED = 10;
+
+    const game = createTestGame();
+    game.startGame();
+    game.state = STATE.PLAYING;
+
+    // Run frames to let zoom converge
+    for (let i = 0; i < 60; i++) {
+        game.updatePlaying(1.0);
+        if (game.state !== STATE.PLAYING) break;
+    }
+
+    assert(game.camZoom < 0.85, `High speed → zoom out (got ${game.camZoom.toFixed(4)} < 0.85)`);
+
+    CFG.ARROW_SPEED = origSpeed; // restore
+})();
+
+// ============================================================
+// Summary
+// ============================================================
+const summary = document.createElement('div');
+summary.className = 'summary ' + (passedTests === totalTests ? 'all-pass' : 'has-fail');
+summary.textContent = `${passedTests}/${totalTests} tests passed` +
+    (passedTests === totalTests ? ' — ALL PASS' : ` — ${totalTests - passedTests} FAILED`);
+resultsEl.appendChild(summary);
+
+console.log(`\n=== Camera Tests: ${passedTests}/${totalTests} passed ===`);
+if (passedTests < totalTests) {
+    console.error(`${totalTests - passedTests} tests FAILED`);
+}
+</script>
+</body>
+</html>
