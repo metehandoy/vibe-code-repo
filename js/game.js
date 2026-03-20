@@ -30,6 +30,7 @@ class Game {
         this.lastTime = 0;
         this.camX = 0;
         this.camY = 0;
+        this.camZoom = 1;
         this.timeFlash = 0;
         this.prevSpeedMult = 1;
         this.speedParticleTimer = 0;
@@ -83,6 +84,7 @@ class Game {
         const lookAheadDist = 80;
         this.camX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist - this.canvas.width / 2;
         this.camY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist - this.canvas.height / 2;
+        this.camZoom = 1;
 
         // Enter countdown state
         this.countdownTimer = 90; // ~1.5 seconds at 60fps
@@ -301,15 +303,46 @@ class Game {
         // Time flash decay
         if (this.timeFlash > 0) this.timeFlash -= dt60;
 
-        // Camera: follow arrow along MOVEMENT direction (not facing)
-        // Reduce look-ahead when slow/drifting to prevent dizzy spinning
-        const speedFactor = this.arrow.speedMult;
-        const lookAheadDist = 80 * speedFactor;
+        // Camera: speed-adaptive zoom, curvature-aware look-ahead
+        const effectiveSpeed = CFG.ARROW_SPEED * this.arrow.speedMult;
+        const baseSpeed = 3.5;
+        const speedRatio = effectiveSpeed / baseSpeed;
+
+        // Zoom: zoom out when faster, zoom in when slower
+        const targetZoom = clamp(1 / Math.pow(speedRatio, 0.35), 0.55, 1.15);
+        this.camZoom = lerp(this.camZoom, targetZoom, 0.05 * dt60);
+
+        // Look-ahead: scales with speed so fast arrows see further ahead
+        const lookAheadDist = 80 + 50 * Math.max(0, speedRatio - 1);
+
+        // Curvature offset: sample upcoming track to bias camera toward curves
+        let curveOffX = 0, curveOffY = 0;
+        const closestSeg = this.track.findClosest(this.arrow.x, this.arrow.y);
+        if (closestSeg) {
+            let totalCurve = 0, count = 0;
+            for (const s of this.track.spine) {
+                const ahead = s.index - closestSeg.index;
+                if (ahead > 2 && ahead < 40) {
+                    totalCurve += angleDiff(closestSeg.angle, s.angle);
+                    count++;
+                }
+            }
+            if (count > 0) {
+                const avgCurve = totalCurve / count;
+                const perpAngle = this.arrow.moveAngle + Math.PI / 2;
+                const offsetStrength = clamp(Math.abs(avgCurve) * 150, 0, 80);
+                const dir = avgCurve > 0 ? 1 : -1;
+                curveOffX = Math.cos(perpAngle) * offsetStrength * dir;
+                curveOffY = Math.sin(perpAngle) * offsetStrength * dir;
+            }
+        }
+
         // Use moveAngle for camera so it doesn't swing with steering
-        const targetCamX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist - this.canvas.width / 2;
-        const targetCamY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist - this.canvas.height / 2;
-        // Slower camera lerp when drifting hard to reduce motion sickness
-        const camSpeed = this.arrow.drifting ? 0.04 : 0.07;
+        const targetCamX = this.arrow.x + Math.cos(this.arrow.moveAngle) * lookAheadDist + curveOffX - this.canvas.width / 2;
+        const targetCamY = this.arrow.y + Math.sin(this.arrow.moveAngle) * lookAheadDist + curveOffY - this.canvas.height / 2;
+        // Camera lerp: faster at high speeds to prevent lag-behind
+        const baseCamSpeed = this.arrow.drifting ? 0.04 : 0.07;
+        const camSpeed = baseCamSpeed + 0.03 * Math.max(0, speedRatio - 1);
         this.camX = lerp(this.camX, targetCamX, camSpeed * dt60);
         this.camY = lerp(this.camY, targetCamY, camSpeed * dt60);
     }
@@ -354,22 +387,32 @@ class Game {
             return;
         }
 
+        // Apply zoom transform centered on screen
+        const ctx = this.renderer.ctx;
+        const zoom = this.camZoom;
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        ctx.scale(zoom, zoom);
+        ctx.translate(-w / 2, -h / 2);
+
         // Draw track
         this.renderer.drawTrack(this.track, this.camX, this.camY);
 
         // Draw time tokens
-        this.tokens.render(this.renderer.ctx, this.camX, this.camY);
+        this.tokens.render(ctx, this.camX, this.camY);
 
         // Draw hazards
-        this.hazards.render(this.renderer.ctx, this.camX, this.camY);
+        this.hazards.render(ctx, this.camX, this.camY);
 
         // Draw particles
-        this.particles.render(this.renderer.ctx, this.camX, this.camY);
+        this.particles.render(ctx, this.camX, this.camY);
 
         // Draw arrow
         if (this.state === STATE.PLAYING || this.state === STATE.COUNTDOWN) {
             this.renderer.drawArrow(this.arrow, this.camX, this.camY, this.arrow.speedMult, this.hazards.getActiveEffect());
         }
+
+        ctx.restore(); // Remove zoom transform
 
         // HUD
         if (this.state === STATE.PLAYING) {
