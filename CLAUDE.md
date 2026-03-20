@@ -160,7 +160,16 @@ Additional test suites: `utils-tests.html`, `arrow-tests.html`, `hazard-tests.ht
 
 ## Important Notes for AI Assistants
 
-1. **Modular JS files**: Game code lives in `js/*.js`. Each file is one logical unit (one class or set of related functions). Files share the global scope and are loaded in dependency order by `index.html`.
+1. **Read index files first, not entire directories.** This repo has detailed index files that map every file and its purpose. Before reading source files, consult the relevant index to find exactly which file and which section you need — then read only those specific lines with offset/limit. This saves significant context space.
+   - **This file (`CLAUDE.md`)** — start here. The Architecture table and Repository Structure tree tell you which `js/*.js` file owns each system.
+   - **`docs/README.md`** — index of all documentation. Links to behavior analysis, risk analysis, and testing specs by system. Read a specific doc only when you need deep detail on that system.
+   - **`docs/testing/README.md`** — index of all test spec files. Find the right `unit-tests-*.md` for the system you're working on instead of reading all test files.
+   - **`js/config.js`** — all tunable parameters with their defaults. Read this before changing game feel.
+   - **`index.html`** — the `<script>` tag order shows the full dependency chain.
+
+   **Anti-pattern:** Do not read every `js/*.js` file to understand the codebase. Read the Architecture table above, identify the 1–2 files relevant to your task, then read only those files (or specific line ranges within them).
+
+2. **Modular JS files**: Game code lives in `js/*.js`. Each file is one logical unit (one class or set of related functions). Files share the global scope and are loaded in dependency order by `index.html`.
 
 2. **dist/mobile.html is auto-generated**: Never edit `dist/mobile.html` directly — it is rebuilt by `scripts/build-mobile.py` on every commit via the post-commit hook.
 
