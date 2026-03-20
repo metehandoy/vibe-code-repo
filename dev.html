@@ -224,6 +224,40 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
     line-height: 1.6;
 }
 
+/* ---- Param description tooltip ---- */
+.param-row label {
+    cursor: pointer;
+}
+.param-desc-tooltip {
+    position: fixed;
+    z-index: 2000;
+    background: rgba(20, 8, 40, 0.97);
+    border: 1px solid #ff00ff88;
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: #eee;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    max-width: 260px;
+    box-shadow: 0 0 16px #ff00ff44, 0 2px 8px rgba(0,0,0,0.6);
+    pointer-events: none;
+    animation: tooltipFadeIn 0.15s ease;
+}
+.param-desc-tooltip .tooltip-key {
+    color: #ff00ff;
+    font-weight: bold;
+    font-size: 10px;
+    margin-bottom: 4px;
+}
+.param-desc-tooltip .tooltip-text {
+    color: #ccc;
+}
+@keyframes tooltipFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* Scroll buttons — sticky footer inside the panel */
 #dev-scroll-btns {
     display: flex;
@@ -2425,6 +2459,119 @@ const PARAM_SECTIONS = [
     ]},
 ];
 
+// ---- Friendly descriptions for each parameter ----
+const PARAM_DESCRIPTIONS = {
+    // Arrow / Driving
+    ARROW_SPEED: 'How fast the arrow moves forward. Higher = faster gameplay.',
+    STEER_RATE: 'How quickly the arrow turns when you steer. Higher = snappier turning.',
+    STEER_MAX: 'Maximum turning speed. Caps how sharp you can turn.',
+    GRIP: 'How well the arrow sticks to the road. Low grip = more sliding and drifting.',
+    REALIGN_RATE: 'How fast the arrow straightens out after a drift. Higher = quicker recovery.',
+    DRIFT_DRAG_EXP: 'How aggressively sideways sliding slows you down. Higher = more drag when drifting.',
+    DRIFT_DRAG_SCALE: 'Strength of the sideways drag effect. Higher = drifting costs more speed.',
+    ARROW_LENGTH: 'Visual length of the arrow (pixels).',
+    ARROW_WIDTH: 'Visual width of the arrow (pixels).',
+    // Braking
+    BRAKE_DECEL: 'How fast you slow down when braking.',
+    BRAKE_MIN_SPEED: 'Lowest speed you can reach while braking. 0 = full stop.',
+    // Speed Recovery
+    SPEED_RECOVERY: 'How fast you regain speed after slowing down (while steering).',
+    SPEED_RECOVERY_RELEASE: 'Speed boost you get when you release the steering input.',
+    // Track Shape
+    TRACK_WIDTH: 'Maximum road width. Wider = easier to stay on track.',
+    MIN_TRACK_WIDTH: 'Narrowest the road can get. Lower = harder tight sections.',
+    SEGMENT_LENGTH: 'Length of each road piece. Shorter = smoother curves but more CPU work.',
+    LOOK_AHEAD: 'How far ahead the track is generated. Higher = see more road.',
+    LOOK_BEHIND: 'How far behind you the track is kept before being removed.',
+    OVERLAP_MARGIN: 'Extra buffer around the arrow for wall collision checks.',
+    // Agent Steering
+    WANDER_WEIGHT: 'How much random wandering affects the track shape. Higher = more chaotic roads.',
+    WANDER_FREQUENCY: 'How often the random wander changes direction. Higher = more wiggly.',
+    WANDER_AMPLITUDE: 'How strong each wander impulse is.',
+    AVOIDANCE_WEIGHT: 'How much the track avoids crossing itself. Higher = fewer overlapping sections.',
+    AVOIDANCE_RADIUS: 'How far away the track looks to avoid itself.',
+    RHYTHM_WEIGHT: 'Strength of the regular wave pattern in the road. Creates flowing S-curves.',
+    RHYTHM_FREQUENCY: 'How tight the S-curve pattern is. Higher = faster oscillation.',
+    RHYTHM_AMPLITUDE: 'Size of the S-curve pattern.',
+    EVENT_WEIGHT: 'How strong sudden sharp turns are. Creates surprise corners.',
+    EVENT_INTENSITY: 'How sharp each surprise turn is.',
+    EVENT_DECAY: 'How quickly a surprise turn fades out. Higher = longer sharp sections.',
+    EVENT_INTERVAL_MIN: 'Minimum segments between surprise turns.',
+    EVENT_INTERVAL_MAX: 'Maximum segments between surprise turns.',
+    CENTERING_WEIGHT: 'How much the track tries to stay near the center of the world.',
+    WIDTH_CURVATURE_COUPLING: 'How much the road narrows on tight curves. 1 = strong narrowing.',
+    WIDTH_TRANSITION_RATE: 'How smoothly the road width changes. Lower = more gradual.',
+    // Agent Physics
+    AGENT_STEER_RATE: 'How quickly the track generator turns. Affects curve smoothness.',
+    AGENT_STEER_MAX: 'Maximum turning speed of the track generator.',
+    AGENT_GRIP: 'Grip of the track generator. Affects how round curves are.',
+    // Agent Offset
+    OFFSET_FREQUENCY: 'How often the road center shifts side to side.',
+    OFFSET_AMPLITUDE: 'How far the road center shifts from the main path.',
+    AGENT_MARGIN: 'Minimum gap between the road edge and the world boundary.',
+    // Difficulty
+    DIFFICULTY_RAMP: 'How quickly the game gets harder over time. Higher = faster difficulty increase.',
+    METERS_PER_SEGMENT: 'How many meters each road segment counts for on the distance display.',
+    // Timer / Tokens
+    START_TIME: 'Seconds on the clock when the game starts.',
+    TIME_TOKEN_VALUE: 'Seconds added when you collect a time token.',
+    TOKEN_RADIUS: 'Size of time tokens. Bigger = easier to collect.',
+    TOKEN_MIN_GAP: 'Minimum road segments between token spawns.',
+    TOKEN_SPAWN_CHANCE: 'Chance of a token appearing on each new segment. Higher = more tokens.',
+    TOKEN_NO_SPAWN_ZONE: 'Segments at the start where no tokens appear.',
+    // Hazards
+    HAZARD_RADIUS: 'Size of hazard icons. Bigger = harder to dodge.',
+    HAZARD_EFFECT_DUR: 'How long a hazard effect lasts (in frames, 60 = 1 second).',
+    HAZARD_MIN_GAP: 'Minimum road segments between hazard spawns.',
+    HAZARD_SPAWN_CHANCE: 'Chance of a hazard appearing on each new segment.',
+    HAZARD_NO_SPAWN_ZONE: 'Segments at the start where no hazards appear.',
+    HAZARD_SLOW_MULT: 'Speed multiplier when you hit a slow hazard. 0.55 = 55% speed.',
+    HAZARD_SPEED_MULT: 'Speed multiplier when you hit a boost hazard. 1.35 = 135% speed.',
+};
+
+// ---- Tooltip management ----
+let activeTooltip = null;
+function showParamTooltip(labelEl, key) {
+    hideParamTooltip();
+    const desc = PARAM_DESCRIPTIONS[key];
+    if (!desc) return;
+    const tip = document.createElement('div');
+    tip.className = 'param-desc-tooltip';
+    tip.innerHTML = '<div class="tooltip-key">' + key + '</div><div class="tooltip-text">' + desc + '</div>';
+    document.body.appendChild(tip);
+    // Position near the label
+    const rect = labelEl.getBoundingClientRect();
+    let left = rect.right + 8;
+    let top = rect.top - 4;
+    // On mobile (panel at bottom) or if it overflows right, show below instead
+    if (left + 260 > window.innerWidth || window.innerWidth <= 768) {
+        left = Math.max(8, rect.left);
+        top = rect.bottom + 6;
+    }
+    // Keep it on screen vertically
+    if (top + 80 > window.innerHeight) {
+        top = Math.max(8, rect.top - 70);
+    }
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+    activeTooltip = tip;
+    // Auto-hide after 5 seconds
+    tip._timer = setTimeout(hideParamTooltip, 5000);
+}
+function hideParamTooltip() {
+    if (activeTooltip) {
+        clearTimeout(activeTooltip._timer);
+        activeTooltip.remove();
+        activeTooltip = null;
+    }
+}
+// Dismiss on any tap/click outside
+document.addEventListener('pointerdown', (e) => {
+    if (activeTooltip && !e.target.closest('.param-row label')) {
+        hideParamTooltip();
+    }
+}, true);
+
 // current holds slider values (not yet applied); initialised from live CFG
 // (which already has any localStorage overrides baked in via the sync transform)
 let current = typeof CFG !== 'undefined' ? { ...CFG } : { ...DEFAULTS };
@@ -2452,6 +2599,10 @@ function buildUI() {
             const lbl = document.createElement('label');
             lbl.textContent = label;
             lbl.title = key;
+            lbl.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                showParamTooltip(lbl, key);
+            });
             const slider = document.createElement('input');
             slider.type = 'range';
             slider.min = min; slider.max = max; slider.step = step;
