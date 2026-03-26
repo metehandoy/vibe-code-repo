@@ -510,30 +510,24 @@ class Arrow {
             if (Math.abs(this.steerVel) < 0.001) this.steerVel = 0;
         }
 
-        const steerDelta = this.steerVel * dt60;
+        // Apply steering to facing angle
+        this.facing += this.steerVel * dt60;
 
-        if (driftBraking) {
-            // Handbrake: lock drift angle — steering rotates both angles together,
-            // grip is skipped so the slide angle stays exactly frozen
-            this.facing += steerDelta;
-            this.moveAngle += steerDelta;
-        } else {
-            // Normal: steering only affects facing
-            this.facing += steerDelta;
-
-            // When not pressing direction, gradually realign facing to movement direction
-            if (inputDir === 0) {
-                const diff = angleDiff(this.facing, this.moveAngle);
-                this.facing += diff * CFG.REALIGN_RATE * dt60;
-            }
-
-            // Grip: velocity direction slowly catches up to facing direction
-            // This is the core drift mechanic — low GRIP = more sliding
-            // During speed boost, grip is halved so the arrow slides more
-            const diff = angleDiff(this.moveAngle, this.facing);
-            const effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
-            this.moveAngle += diff * effectiveGrip * dt60;
+        // When not pressing direction, gradually realign facing to movement direction
+        // During drift+brake, skip realign to preserve the drift
+        if (inputDir === 0 && !driftBraking) {
+            const diff = angleDiff(this.facing, this.moveAngle);
+            this.facing += diff * CFG.REALIGN_RATE * dt60;
         }
+
+        // Grip: velocity direction slowly catches up to facing direction
+        // This is the core drift mechanic — low GRIP = more sliding
+        // During speed boost, grip is halved so the arrow slides more
+        // During handbrake, grip is greatly reduced so the drift angle changes slowly
+        const diff = angleDiff(this.moveAngle, this.facing);
+        let effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
+        if (driftBraking) effectiveGrip *= 0.2;
+        this.moveAngle += diff * effectiveGrip * dt60;
 
         // Calculate drift amount (angle between facing and movement)
         this.driftAmount = Math.abs(angleDiff(this.facing, this.moveAngle));
