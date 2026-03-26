@@ -60,7 +60,6 @@ class Arrow {
         const driftBraking = this._driftBrakeActive;
 
         if (inputDir !== 0) {
-            // Steer the facing angle (allowed during drift+brake too)
             this.steerVel += inputDir * CFG.STEER_RATE * dt60;
             this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
         } else {
@@ -69,27 +68,29 @@ class Arrow {
             if (Math.abs(this.steerVel) < 0.001) this.steerVel = 0;
         }
 
-        // Apply steering to facing angle
-        this.facing += this.steerVel * dt60;
+        const steerDelta = this.steerVel * dt60;
 
-        // When not pressing direction, gradually realign facing to movement direction
-        // During drift+brake, skip realign to lock the drift angle
-        if (inputDir === 0 && !driftBraking) {
-            const diff = angleDiff(this.facing, this.moveAngle);
-            this.facing += diff * CFG.REALIGN_RATE * dt60;
-        }
-
-        // Movement: velocity direction slowly catches up to facing direction
-        // This is the core drift mechanic — low GRIP = more sliding
-        // During speed boost, grip is halved so the arrow slides more
-        const diff = angleDiff(this.moveAngle, this.facing);
-        const effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
-        const gripDelta = diff * effectiveGrip * dt60;
-        this.moveAngle += gripDelta;
         if (driftBraking) {
-            // Rotate facing by the same amount so the drift angle stays stable
-            // The arrow keeps curving but the slide angle doesn't grow or shrink
-            this.facing += gripDelta;
+            // Handbrake: lock drift angle — steering rotates both angles together,
+            // grip is skipped so the slide angle stays exactly frozen
+            this.facing += steerDelta;
+            this.moveAngle += steerDelta;
+        } else {
+            // Normal: steering only affects facing
+            this.facing += steerDelta;
+
+            // When not pressing direction, gradually realign facing to movement direction
+            if (inputDir === 0) {
+                const diff = angleDiff(this.facing, this.moveAngle);
+                this.facing += diff * CFG.REALIGN_RATE * dt60;
+            }
+
+            // Grip: velocity direction slowly catches up to facing direction
+            // This is the core drift mechanic — low GRIP = more sliding
+            // During speed boost, grip is halved so the arrow slides more
+            const diff = angleDiff(this.moveAngle, this.facing);
+            const effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
+            this.moveAngle += diff * effectiveGrip * dt60;
         }
 
         // Calculate drift amount (angle between facing and movement)
@@ -108,8 +109,8 @@ class Arrow {
         this.totalDistance += speed;
 
         // Recover speed: fast burst when releasing drift, slower while drifting
-        // No recovery while braking (unless drift+brake — that only locks angle)
-        if (!braking || driftBraking) {
+        // No recovery while braking
+        if (!braking) {
             let recoveryRate;
             if (inputDir === 0 && this.driftAmount < 0.15) {
                 recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
