@@ -1730,14 +1730,11 @@ class Game {
         const _hazardMult = this.hazards.getSpeedMult();
         this.arrow.update(dir, dt60, braking, _hazardMult, _hazardMult > 1);
 
-        // Braking: full decel when not drifting, mild decel during handbrake
-        if (braking) {
-            const decel = this.arrow.drifting
-                ? CFG.BRAKE_DECEL * 0.3
-                : CFG.BRAKE_DECEL;
+        // Braking: decel only when not drifting; handbrake preserves speed
+        if (braking && !this.arrow.drifting) {
             this.arrow.speedMult = Math.max(
                 CFG.BRAKE_MIN_SPEED,
-                this.arrow.speedMult - decel * dt60
+                this.arrow.speedMult - CFG.BRAKE_DECEL * dt60
             );
         }
 
