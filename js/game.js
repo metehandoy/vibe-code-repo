@@ -186,14 +186,12 @@ class Game {
         const _hazardMult = this.hazards.getSpeedMult();
         this.arrow.update(dir, dt60, braking, _hazardMult, _hazardMult > 1);
 
-        // Braking: full brake when not drifting, mild handbrake when drifting
-        if (braking) {
-            const decel = this.arrow.drifting
-                ? CFG.BRAKE_DECEL * 0.25   // handbrake: gentle slowdown
-                : CFG.BRAKE_DECEL;          // regular brake: full decel
+        // Braking: both sides pressed slows down gradually to near-stop
+        // During drift+brake (handbrake), no extra decel — reduced grip is the only effect
+        if (braking && !this.arrow.drifting) {
             this.arrow.speedMult = Math.max(
                 CFG.BRAKE_MIN_SPEED,
-                this.arrow.speedMult - decel * dt60
+                this.arrow.speedMult - CFG.BRAKE_DECEL * dt60
             );
         }
 

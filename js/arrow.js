@@ -103,8 +103,8 @@ class Arrow {
         this.totalDistance += speed;
 
         // Recover speed: fast burst when releasing drift, slower while drifting
-        // No recovery while braking
-        if (!braking) {
+        // No recovery while braking (except handbrake — that only reduces grip)
+        if (!braking || driftBraking) {
             let recoveryRate;
             if (inputDir === 0 && this.driftAmount < 0.15) {
                 recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
