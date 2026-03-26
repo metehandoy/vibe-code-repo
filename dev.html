@@ -822,6 +822,7 @@ class Arrow {
         const driftBraking = this._driftBrakeActive;
 
         if (inputDir !== 0) {
+            // Steer the facing angle (allowed during drift+brake too)
             this.steerVel += inputDir * CFG.STEER_RATE * dt60;
             this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
         } else {
@@ -834,20 +835,24 @@ class Arrow {
         this.facing += this.steerVel * dt60;
 
         // When not pressing direction, gradually realign facing to movement direction
-        // During drift+brake, skip realign to preserve the drift
+        // During drift+brake, skip realign to lock the drift angle
         if (inputDir === 0 && !driftBraking) {
             const diff = angleDiff(this.facing, this.moveAngle);
             this.facing += diff * CFG.REALIGN_RATE * dt60;
         }
 
-        // Grip: velocity direction slowly catches up to facing direction
+        // Movement: velocity direction slowly catches up to facing direction
         // This is the core drift mechanic — low GRIP = more sliding
         // During speed boost, grip is halved so the arrow slides more
-        // During handbrake, grip is greatly reduced so the drift angle changes slowly
         const diff = angleDiff(this.moveAngle, this.facing);
-        let effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
-        if (driftBraking) effectiveGrip *= 0.2;
-        this.moveAngle += diff * effectiveGrip * dt60;
+        const effectiveGrip = boostActive ? CFG.GRIP * 0.5 : CFG.GRIP;
+        const gripDelta = diff * effectiveGrip * dt60;
+        this.moveAngle += gripDelta;
+        if (driftBraking) {
+            // Rotate facing by the same amount so the drift angle stays stable
+            // The arrow keeps curving but the slide angle doesn't grow or shrink
+            this.facing += gripDelta;
+        }
 
         // Calculate drift amount (angle between facing and movement)
         this.driftAmount = Math.abs(angleDiff(this.facing, this.moveAngle));
@@ -865,8 +870,8 @@ class Arrow {
         this.totalDistance += speed;
 
         // Recover speed: fast burst when releasing drift, slower while drifting
-        // No recovery while braking (except handbrake — that only reduces grip)
-        if (!braking || driftBraking) {
+        // No recovery while braking
+        if (!braking) {
             let recoveryRate;
             if (inputDir === 0 && this.driftAmount < 0.15) {
                 recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
@@ -2047,12 +2052,14 @@ class Game {
         const _hazardMult = this.hazards.getSpeedMult();
         this.arrow.update(dir, dt60, braking, _hazardMult, _hazardMult > 1);
 
-        // Braking: both sides pressed slows down gradually to near-stop
-        // During drift+brake (handbrake), no extra decel — reduced grip is the only effect
-        if (braking && !this.arrow.drifting) {
+        // Braking: full decel when not drifting, mild decel during handbrake
+        if (braking) {
+            const decel = this.arrow.drifting
+                ? CFG.BRAKE_DECEL * 0.3
+                : CFG.BRAKE_DECEL;
             this.arrow.speedMult = Math.max(
                 CFG.BRAKE_MIN_SPEED,
-                this.arrow.speedMult - CFG.BRAKE_DECEL * dt60
+                this.arrow.speedMult - decel * dt60
             );
         }
 

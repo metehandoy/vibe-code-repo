@@ -186,12 +186,14 @@ class Game {
         const _hazardMult = this.hazards.getSpeedMult();
         this.arrow.update(dir, dt60, braking, _hazardMult, _hazardMult > 1);
 
-        // Braking: both sides pressed slows down gradually to near-stop
-        // During drift+brake (handbrake), no extra decel — reduced grip is the only effect
-        if (braking && !this.arrow.drifting) {
+        // Braking: full decel when not drifting, mild decel during handbrake
+        if (braking) {
+            const decel = this.arrow.drifting
+                ? CFG.BRAKE_DECEL * 0.3
+                : CFG.BRAKE_DECEL;
             this.arrow.speedMult = Math.max(
                 CFG.BRAKE_MIN_SPEED,
-                this.arrow.speedMult - CFG.BRAKE_DECEL * dt60
+                this.arrow.speedMult - decel * dt60
             );
         }
 
