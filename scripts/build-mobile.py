@@ -14,12 +14,14 @@ How it works:
   4. Writes the result to mobile.html — a zero-dependency single file for mobile.
 """
 
-import re, sys
+import json, re, sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 INDEX = ROOT / 'index.html'
 MOBILE = ROOT / 'dist' / 'mobile.html'
+CONFIG_JS = ROOT / 'js' / 'config.js'
+DEV_CONFIG = ROOT / 'drift-config.json'
 
 # Ordered list of JS files — must match the <script> tag order in index.html
 JS_FILES = [
@@ -70,9 +72,45 @@ def extract_html_shell(html):
     return before, after
 
 
+def apply_dev_config():
+    """If drift-config.json exists, patch matching values into js/config.js."""
+    if not DEV_CONFIG.exists():
+        return
+    try:
+        overrides = json.loads(DEV_CONFIG.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f'build-mobile: WARNING – could not read {DEV_CONFIG.name}: {e}')
+        return
+
+    config_src = CONFIG_JS.read_text(encoding='utf-8')
+    count = 0
+    for key, value in overrides.items():
+        # Format the number: drop trailing zeros but keep at least one decimal
+        # for floats, use plain int repr for whole numbers
+        if isinstance(value, float) and value == int(value) and '.' in str(value):
+            formatted = f'{value:g}'
+            if '.' not in formatted:
+                formatted += '.0'
+        elif isinstance(value, float):
+            formatted = f'{value:g}'
+        else:
+            formatted = str(value)
+        # Match "    KEY: <number>," with optional trailing comment
+        pattern = rf'(    {re.escape(key)}:\s*)-?[\d.]+(\s*,)'
+        new_src = re.sub(pattern, rf'\g<1>{formatted}\2', config_src, count=1)
+        if new_src != config_src:
+            config_src = new_src
+            count += 1
+    if count > 0:
+        CONFIG_JS.write_text(config_src, encoding='utf-8')
+        print(f'build-mobile: updated {count} value(s) in config.js from {DEV_CONFIG.name}')
+
+
 def build():
     if not INDEX.exists():
         sys.exit('build-mobile: ERROR – index.html not found')
+
+    apply_dev_config()
 
     index_html = INDEX.read_text(encoding='utf-8')
     js_code = read_js_files()
