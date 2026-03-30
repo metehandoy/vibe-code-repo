@@ -82,8 +82,8 @@ def transform(script: str) -> str:
     # After the CFG closing }; inject a localStorage overlay so the dev
     # panel's saved settings are applied before the game starts.
     script = script.replace(
-        '    TOKEN_RADIUS: 10,\n};',
-        '    TOKEN_RADIUS: 10,\n};\n'
+        '    DEATH_HAZARD_RADIUS: 5,\n};',
+        '    DEATH_HAZARD_RADIUS: 5,\n};\n'
         '// Overlay saved dev config from localStorage\n'
         'try {\n'
         "    const _devSaved = localStorage.getItem('driftArrowDevConfig');\n"
