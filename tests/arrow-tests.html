@@ -294,19 +294,21 @@ section('Movement Direction');
 })();
 
 // ============================================================
-// TEST: Realignment (facing → moveAngle when no input)
+// TEST: No auto-realign (Data Wing-style: facing holds when no input)
 // ============================================================
-section('Realignment');
+section('No Auto-Realign');
 
 (() => {
     const a = freshArrow();
     // Force a difference between facing and moveAngle
     a.facing = 0;
     a.moveAngle = -Math.PI / 4;
+    const facingBefore = a.facing;
     stepArrow(a, 60, 0); // coast with no input
-    // Facing should move toward moveAngle
-    const diff = Math.abs(angleDiff(a.facing, a.moveAngle));
-    assert(diff < Math.PI / 4, 'Facing realigns toward moveAngle when no input');
+    // Facing should NOT realign toward moveAngle — it holds its heading
+    // (moveAngle catches up to facing via grip instead)
+    const facingDrift = Math.abs(angleDiff(a.facing, facingBefore));
+    assert(facingDrift < 0.05, 'Facing holds steady when no input (Data Wing-style)');
 })();
 
 // ============================================================

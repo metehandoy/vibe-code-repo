@@ -65,19 +65,15 @@ class Arrow {
             this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
         } else {
             // Dampen steering velocity when not pressing
-            this.steerVel *= Math.pow(0.85, dt60);
+            this.steerVel *= Math.pow(0.92, dt60);
             if (Math.abs(this.steerVel) < 0.001) this.steerVel = 0;
         }
 
         // Apply steering to facing angle
         this.facing += this.steerVel * dt60;
 
-        // When not pressing direction, gradually realign facing to movement direction
-        // During drift+brake, skip realign to lock the drift angle
-        if (inputDir === 0 && !driftBraking) {
-            const diff = angleDiff(this.facing, this.moveAngle);
-            this.facing += diff * CFG.REALIGN_RATE * dt60;
-        }
+        // Data Wing-style: no auto-realign. Arrow holds its heading when
+        // input is released. Drift angle is controlled purely by the player.
 
         // Movement: velocity direction slowly catches up to facing direction
         // This is the core drift mechanic — low GRIP = more sliding
@@ -107,14 +103,14 @@ class Arrow {
         this.y += Math.sin(this.moveAngle) * speed;
         this.totalDistance += speed;
 
-        // Recover speed: fast burst when releasing drift, slower while drifting
+        // Recover speed: rate depends on drift amount, not input state
         // No recovery while braking
         if (!braking) {
             let recoveryRate;
-            if (inputDir === 0 && this.driftAmount < 0.15) {
+            if (this.driftAmount < 0.05) {
                 recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
-            } else if (this.driftAmount < 0.05) {
-                recoveryRate = CFG.SPEED_RECOVERY * 2;
+            } else if (this.driftAmount < 0.3) {
+                recoveryRate = CFG.SPEED_RECOVERY;
             } else {
                 recoveryRate = CFG.SPEED_RECOVERY * 0.3;
             }

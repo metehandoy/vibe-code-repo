@@ -16,7 +16,7 @@ const CFG = __hashCfg || window.__DRIFT_CFG || {
     STEER_RATE: 0.014,          // slightly slower rotation for less dizziness
     STEER_MAX: 0.045,           // lower cap to prevent extreme spinning
     GRIP: 0.025,
-    REALIGN_RATE: 0.04,
+    REALIGN_RATE: 0,              // 0 = Data Wing-style (no auto-realign)
     DRIFT_DRAG_EXP: 2.0,
     DRIFT_DRAG_SCALE: 0.008,
     ARROW_LENGTH: 22,
