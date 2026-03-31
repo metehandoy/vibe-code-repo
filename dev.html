@@ -2227,8 +2227,9 @@ class Game {
         // Combine: center on arrow, then shift by look-ahead + screen offset + curvature
         const targetCamX = this.arrow.x + dirX * lookAheadDist + screenOffX + curveOffX - this.canvas.width / 2;
         const targetCamY = this.arrow.y + dirY * lookAheadDist + screenOffY + curveOffY - this.canvas.height / 2;
-        // Camera lerp: faster at high speeds to prevent lag-behind
-        const baseCamSpeed = this.arrow.drifting ? 0.04 : 0.07;
+        // Camera lerp: slower when drifting (smooth blend), faster at high speeds
+        const driftBlend = clamp(this.arrow.driftAmount / 0.3, 0, 1);
+        const baseCamSpeed = lerp(0.07, 0.04, driftBlend);
         const camSpeed = baseCamSpeed + 0.03 * Math.max(0, speedRatio - 1);
         this.camX = lerp(this.camX, targetCamX, camSpeed * dt60);
         this.camY = lerp(this.camY, targetCamY, camSpeed * dt60);
