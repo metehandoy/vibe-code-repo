@@ -350,7 +350,7 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
 const CFG = {
     ARROW_SPEED: 3.5,
     STEER_RATE: 0.01,
-    STEER_MAX: 0.0225,
+    STEER_MAX: 0.035,
     GRIP: 0.025,
     REALIGN_RATE: 0.04,
     DRIFT_DRAG_EXP: 2,
@@ -2541,6 +2541,7 @@ const PARAM_SECTIONS = [
         ['HAZARD_NO_SPAWN_ZONE', 'No-Spawn Zone', 20, 200, 10],
         ['HAZARD_SLOW_MULT', 'Slow Mult', 0.2, 0.9, 0.05],
         ['HAZARD_SPEED_MULT', 'Speed Mult', 1.02, 1.5, 0.02],
+        ['DEATH_HAZARD_RADIUS', 'Death Radius', 2, 15, 1],
     ]},
 ];
 
@@ -2612,6 +2613,7 @@ const PARAM_DESCRIPTIONS = {
     HAZARD_NO_SPAWN_ZONE: 'Segments at the start where no hazards appear.',
     HAZARD_SLOW_MULT: 'Speed multiplier when you hit a slow hazard. 0.55 = 55% speed.',
     HAZARD_SPEED_MULT: 'Speed multiplier when you hit a boost hazard. 1.35 = 135% speed.',
+    DEATH_HAZARD_RADIUS: 'Collision radius of instant-death hazards. Smaller = easier to dodge.',
 };
 
 // ---- Tooltip management ----
