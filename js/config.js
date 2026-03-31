@@ -13,8 +13,8 @@ try {
 
 const CFG = __hashCfg || window.__DRIFT_CFG || {
     ARROW_SPEED: 3.5,
-    STEER_RATE: 0.014,
-    STEER_MAX: 0.045,
+    STEER_RATE: 0.007,
+    STEER_MAX: 0.0225,
     GRIP: 0.025,
     REALIGN_RATE: 0.04,
     DRIFT_DRAG_EXP: 2,
