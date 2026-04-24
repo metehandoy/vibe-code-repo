@@ -39,7 +39,7 @@ giving sliders for every `CFG` value. Hit **Apply + Restart** to reload the
 game with your changes. Settings are saved to `localStorage`.
 
 ## Project Structure
-/
+<code>
 ├── index.html              # Game shell — loads JS modules via  tags
 ├── dev.html                # Dev tuner — game embedded + overlay panel
 ├── js/
@@ -71,3 +71,4 @@ game with your changes. Settings are saved to `localStorage`.
 │   └── build-mobile.py     # Merges JS modules into dist/mobile.html
 └── .github/workflows/
     └── ci.yml              # CI: all test suites + HTML validation
+</code>
