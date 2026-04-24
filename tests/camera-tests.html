@@ -85,9 +85,10 @@ function computeLookAhead(speedRatio) {
     return 40 + 30 * Math.max(0, speedRatio - 1);
 }
 
-// Helper: compute camera lerp speed
-function computeCamSpeed(speedRatio, drifting) {
-    const baseCamSpeed = drifting ? 0.04 : 0.07;
+// Helper: compute camera lerp speed (smooth blend based on driftAmount)
+function computeCamSpeed(speedRatio, driftAmount) {
+    const driftBlend = clamp(driftAmount / 0.3, 0, 1);
+    const baseCamSpeed = lerp(0.07, 0.04, driftBlend);
     return baseCamSpeed + 0.03 * Math.max(0, speedRatio - 1);
 }
 
@@ -206,26 +207,35 @@ section('Look-Ahead Distance');
 section('Camera Lerp Speed');
 
 (() => {
-    // Normal, not drifting, ratio=1
-    assertApprox(computeCamSpeed(1.0, false), 0.07, 0.001, 'Normal speed, not drifting → camSpeed = 0.07');
+    // No drift (driftAmount=0), ratio=1
+    assertApprox(computeCamSpeed(1.0, 0), 0.07, 0.001, 'Normal speed, no drift → camSpeed = 0.07');
 
-    // Normal, drifting, ratio=1
-    assertApprox(computeCamSpeed(1.0, true), 0.04, 0.001, 'Normal speed, drifting → camSpeed = 0.04');
+    // Full drift (driftAmount≥0.3), ratio=1
+    assertApprox(computeCamSpeed(1.0, 0.3), 0.04, 0.001, 'Normal speed, full drift → camSpeed = 0.04');
 
-    // High speed, not drifting, ratio=2
-    assertApprox(computeCamSpeed(2.0, false), 0.10, 0.001, 'Double speed, not drifting → camSpeed = 0.10');
+    // Partial drift (driftAmount=0.15), ratio=1 → midpoint between 0.07 and 0.04
+    assertApprox(computeCamSpeed(1.0, 0.15), 0.055, 0.001, 'Normal speed, half drift → camSpeed = 0.055');
 
-    // Below default, not drifting, ratio=0.5
-    assertApprox(computeCamSpeed(0.5, false), 0.07, 0.001, 'Slow speed → camSpeed = 0.07 (no reduction below base)');
+    // High speed, no drift, ratio=2
+    assertApprox(computeCamSpeed(2.0, 0), 0.10, 0.001, 'Double speed, no drift → camSpeed = 0.10');
 
-    // High speed, drifting
-    assertApprox(computeCamSpeed(2.0, true), 0.07, 0.001, 'Double speed, drifting → camSpeed = 0.07');
+    // Slow speed, no drift, ratio=0.5
+    assertApprox(computeCamSpeed(0.5, 0), 0.07, 0.001, 'Slow speed → camSpeed = 0.07 (no reduction below base)');
+
+    // High speed, full drift
+    assertApprox(computeCamSpeed(2.0, 0.3), 0.07, 0.001, 'Double speed, full drift → camSpeed = 0.07');
 
     // Monotonicity above ratio=1
-    const cs1 = computeCamSpeed(1.0, false);
-    const cs2 = computeCamSpeed(2.0, false);
-    const cs3 = computeCamSpeed(3.0, false);
+    const cs1 = computeCamSpeed(1.0, 0);
+    const cs2 = computeCamSpeed(2.0, 0);
+    const cs3 = computeCamSpeed(3.0, 0);
     assert(cs1 < cs2 && cs2 < cs3, 'Lerp speed increases with speed ratio');
+
+    // Monotonicity with drift: more drift → slower lerp
+    const cd1 = computeCamSpeed(1.0, 0);
+    const cd2 = computeCamSpeed(1.0, 0.15);
+    const cd3 = computeCamSpeed(1.0, 0.3);
+    assert(cd1 > cd2 && cd2 > cd3, 'Lerp speed decreases with drift amount');
 })();
 
 // ============================================================

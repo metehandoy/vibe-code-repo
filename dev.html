@@ -349,55 +349,67 @@ canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; lef
 // ============================================================
 const CFG = {
     ARROW_SPEED: 3.5,
-    STEER_RATE: 0.014,          // slightly slower rotation for less dizziness
-    STEER_MAX: 0.045,           // lower cap to prevent extreme spinning
+    STEER_RATE: 0.01,
+    STEER_MAX: 0.035,
     GRIP: 0.025,
     REALIGN_RATE: 0.04,
-    DRIFT_DRAG_EXP: 2.0,
+    DRIFT_DRAG_EXP: 2,
     DRIFT_DRAG_SCALE: 0.008,
     ARROW_LENGTH: 22,
-    ARROW_WIDTH: 10,
-    TRACK_WIDTH: 140,
-    MIN_TRACK_WIDTH: 38,
-    BRAKE_DECEL: 0.02,
-    BRAKE_MIN_SPEED: 0.05,
+    ARROW_WIDTH: 9,
+    TRACK_WIDTH: 170,
+    MIN_TRACK_WIDTH: 65,
+    BRAKE_DECEL: 0.085,
+    BRAKE_MIN_SPEED: 0.5,
     SEGMENT_LENGTH: 12,
     LOOK_AHEAD: 120,
     LOOK_BEHIND: 100,
-    SPEED_RECOVERY: 0.012,
+    SPEED_RECOVERY: 0.034,
     SPEED_RECOVERY_RELEASE: 0.06,
-    DIFFICULTY_RAMP: 0.00012,
-    METERS_PER_SEGMENT: 0.03,   // 1/100 scale — arrow ≈10cm, km takes very long
+    DIFFICULTY_RAMP: 1.2E-4,
+    METERS_PER_SEGMENT: 0.03,
     OVERLAP_MARGIN: 15,
     // Agent steering
-    WANDER_WEIGHT: 1.0,
+    WANDER_WEIGHT: 1,
     WANDER_FREQUENCY: 0.08,
     WANDER_AMPLITUDE: 0.06,
-    AVOIDANCE_WEIGHT: 3.0,
+    AVOIDANCE_WEIGHT: 3,
     AVOIDANCE_RADIUS: 500,
     RHYTHM_WEIGHT: 0.7,
     RHYTHM_FREQUENCY: 0.12,
     RHYTHM_AMPLITUDE: 0.04,
-    EVENT_WEIGHT: 1.5,
-    EVENT_INTENSITY: 0.10,
+    EVENT_WEIGHT: 4,
+    EVENT_INTENSITY: 0.1,
     EVENT_DECAY: 0.92,
     EVENT_INTERVAL_MIN: 15,
     EVENT_INTERVAL_MAX: 60,
     CENTERING_WEIGHT: 0.15,
     WIDTH_CURVATURE_COUPLING: 0.7,
     WIDTH_TRANSITION_RATE: 0.12,
-    // Agent physics (mirrors Arrow physics, slightly conservative)
+    // Agent physics
     AGENT_STEER_RATE: 0.011,
     AGENT_STEER_MAX: 0.038,
-    AGENT_GRIP: 0.030,
+    AGENT_GRIP: 0.03,
     // Track center offset from agent path
     OFFSET_FREQUENCY: 0.02,
     OFFSET_AMPLITUDE: 0.8,
     AGENT_MARGIN: 18,
-    // Timer
+    // Timer / tokens
     START_TIME: 30,
     TIME_TOKEN_VALUE: 3.5,
     TOKEN_RADIUS: 10,
+    TOKEN_MIN_GAP: 25,
+    TOKEN_SPAWN_CHANCE: 0.025,
+    TOKEN_NO_SPAWN_ZONE: 40,
+    // Hazards
+    HAZARD_RADIUS: 10,
+    HAZARD_EFFECT_DUR: 180,
+    HAZARD_MIN_GAP: 10,
+    HAZARD_SPAWN_CHANCE: 0.02,
+    HAZARD_NO_SPAWN_ZONE: 80,
+    HAZARD_SLOW_MULT: 0.55,
+    HAZARD_SPEED_MULT: 1.12,
+    DEATH_HAZARD_RADIUS: 5,
 };
 // Overlay saved dev config from localStorage
 try {
@@ -827,19 +839,15 @@ class Arrow {
             this.steerVel = clamp(this.steerVel, -CFG.STEER_MAX, CFG.STEER_MAX);
         } else {
             // Dampen steering velocity when not pressing
-            this.steerVel *= Math.pow(0.85, dt60);
+            this.steerVel *= Math.pow(0.92, dt60);
             if (Math.abs(this.steerVel) < 0.001) this.steerVel = 0;
         }
 
         // Apply steering to facing angle
         this.facing += this.steerVel * dt60;
 
-        // When not pressing direction, gradually realign facing to movement direction
-        // During drift+brake, skip realign to lock the drift angle
-        if (inputDir === 0 && !driftBraking) {
-            const diff = angleDiff(this.facing, this.moveAngle);
-            this.facing += diff * CFG.REALIGN_RATE * dt60;
-        }
+        // Data Wing-style: no auto-realign. Arrow holds its heading when
+        // input is released. Drift angle is controlled purely by the player.
 
         // Movement: velocity direction slowly catches up to facing direction
         // This is the core drift mechanic — low GRIP = more sliding
@@ -869,14 +877,14 @@ class Arrow {
         this.y += Math.sin(this.moveAngle) * speed;
         this.totalDistance += speed;
 
-        // Recover speed: fast burst when releasing drift, slower while drifting
+        // Recover speed: rate depends on drift amount, not input state
         // No recovery while braking
         if (!braking) {
             let recoveryRate;
-            if (inputDir === 0 && this.driftAmount < 0.15) {
+            if (this.driftAmount < 0.05) {
                 recoveryRate = CFG.SPEED_RECOVERY_RELEASE;
-            } else if (this.driftAmount < 0.05) {
-                recoveryRate = CFG.SPEED_RECOVERY * 2;
+            } else if (this.driftAmount < 0.3) {
+                recoveryRate = CFG.SPEED_RECOVERY;
             } else {
                 recoveryRate = CFG.SPEED_RECOVERY * 0.3;
             }
@@ -996,7 +1004,7 @@ if (CFG.HAZARD_MIN_GAP == null) CFG.HAZARD_MIN_GAP = 10;
 if (CFG.HAZARD_SPAWN_CHANCE == null) CFG.HAZARD_SPAWN_CHANCE = 0.02;
 if (CFG.HAZARD_NO_SPAWN_ZONE == null) CFG.HAZARD_NO_SPAWN_ZONE = 80;
 if (CFG.HAZARD_SLOW_MULT == null) CFG.HAZARD_SLOW_MULT = 0.55;
-if (CFG.HAZARD_SPEED_MULT == null) CFG.HAZARD_SPEED_MULT = 1.35;
+if (CFG.HAZARD_SPEED_MULT == null) CFG.HAZARD_SPEED_MULT = 1.12;
 if (CFG.OVERLAP_MARGIN == null) CFG.OVERLAP_MARGIN = 15;
 
 class TimeTokenManager {
@@ -2219,8 +2227,9 @@ class Game {
         // Combine: center on arrow, then shift by look-ahead + screen offset + curvature
         const targetCamX = this.arrow.x + dirX * lookAheadDist + screenOffX + curveOffX - this.canvas.width / 2;
         const targetCamY = this.arrow.y + dirY * lookAheadDist + screenOffY + curveOffY - this.canvas.height / 2;
-        // Camera lerp: faster at high speeds to prevent lag-behind
-        const baseCamSpeed = this.arrow.drifting ? 0.04 : 0.07;
+        // Camera lerp: slower when drifting (smooth blend), faster at high speeds
+        const driftBlend = clamp(this.arrow.driftAmount / 0.3, 0, 1);
+        const baseCamSpeed = lerp(0.07, 0.04, driftBlend);
         const camSpeed = baseCamSpeed + 0.03 * Math.max(0, speedRatio - 1);
         this.camX = lerp(this.camX, targetCamX, camSpeed * dt60);
         this.camY = lerp(this.camY, targetCamY, camSpeed * dt60);
@@ -2532,6 +2541,7 @@ const PARAM_SECTIONS = [
         ['HAZARD_NO_SPAWN_ZONE', 'No-Spawn Zone', 20, 200, 10],
         ['HAZARD_SLOW_MULT', 'Slow Mult', 0.2, 0.9, 0.05],
         ['HAZARD_SPEED_MULT', 'Speed Mult', 1.02, 1.5, 0.02],
+        ['DEATH_HAZARD_RADIUS', 'Death Radius', 2, 15, 1],
     ]},
 ];
 
@@ -2603,6 +2613,7 @@ const PARAM_DESCRIPTIONS = {
     HAZARD_NO_SPAWN_ZONE: 'Segments at the start where no hazards appear.',
     HAZARD_SLOW_MULT: 'Speed multiplier when you hit a slow hazard. 0.55 = 55% speed.',
     HAZARD_SPEED_MULT: 'Speed multiplier when you hit a boost hazard. 1.35 = 135% speed.',
+    DEATH_HAZARD_RADIUS: 'Collision radius of instant-death hazards. Smaller = easier to dodge.',
 };
 
 // ---- Tooltip management ----

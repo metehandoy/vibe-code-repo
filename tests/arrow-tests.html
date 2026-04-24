@@ -221,9 +221,9 @@ section('Speed Recovery');
 section('Drift Drag');
 
 (() => {
-    // Drift drag reduces speedMult
+    // Drift drag reduces speedMult (needs sustained drift to overcome recovery)
     const a = freshArrow();
-    stepArrow(a, 30, 1); // build up drift
+    stepArrow(a, 120, 1); // sustained drift so drag outpaces recovery
     assert(a.speedMult < 1, 'Drift drag reduces speedMult below 1');
 
     // CRITICAL: Speed never drops below 0.5 (drag floor)
@@ -294,19 +294,21 @@ section('Movement Direction');
 })();
 
 // ============================================================
-// TEST: Realignment (facing → moveAngle when no input)
+// TEST: No auto-realign (Data Wing-style: facing holds when no input)
 // ============================================================
-section('Realignment');
+section('No Auto-Realign');
 
 (() => {
     const a = freshArrow();
     // Force a difference between facing and moveAngle
     a.facing = 0;
     a.moveAngle = -Math.PI / 4;
+    const facingBefore = a.facing;
     stepArrow(a, 60, 0); // coast with no input
-    // Facing should move toward moveAngle
-    const diff = Math.abs(angleDiff(a.facing, a.moveAngle));
-    assert(diff < Math.PI / 4, 'Facing realigns toward moveAngle when no input');
+    // Facing should NOT realign toward moveAngle — it holds its heading
+    // (moveAngle catches up to facing via grip instead)
+    const facingDrift = Math.abs(angleDiff(a.facing, facingBefore));
+    assert(facingDrift < 0.05, 'Facing holds steady when no input (Data Wing-style)');
 })();
 
 // ============================================================
