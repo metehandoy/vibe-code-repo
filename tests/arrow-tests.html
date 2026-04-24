@@ -221,9 +221,9 @@ section('Speed Recovery');
 section('Drift Drag');
 
 (() => {
-    // Drift drag reduces speedMult
+    // Drift drag reduces speedMult (needs sustained drift to overcome recovery)
     const a = freshArrow();
-    stepArrow(a, 30, 1); // build up drift
+    stepArrow(a, 120, 1); // sustained drift so drag outpaces recovery
     assert(a.speedMult < 1, 'Drift drag reduces speedMult below 1');
 
     // CRITICAL: Speed never drops below 0.5 (drag floor)
