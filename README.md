@@ -31,6 +31,62 @@ A neon synthwave endless drifting game. Control an arrow through a procedurally 
 - Synthesized audio — no audio files
 - High score persistence
 
+## Packaging as a Native App
+
+`scripts/package-mobile.py` wraps `dist/mobile.html` in a Capacitor WebView shell and produces installable app files.
+
+### Android APK
+
+**Prerequisites** — install once:
+
+```bash
+# 1. Download Android command-line tools from:
+#    https://developer.android.com/studio#command-line-tools-only
+mkdir -p ~/android-sdk/cmdline-tools/latest
+unzip commandlinetools-*.zip -d ~/android-sdk/cmdline-tools/latest --strip 1
+export ANDROID_HOME=~/android-sdk
+
+# 2. Install the required SDK components
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+    "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+```
+
+**Build:**
+
+```bash
+python3 scripts/package-mobile.py
+# → dist/drift-arrow-debug.apk
+```
+
+**Install on device via USB:**
+
+```bash
+adb install -r dist/drift-arrow-debug.apk
+```
+
+Or transfer `dist/drift-arrow-debug.apk` to your phone and open it (enable *Install unknown apps* in Settings → Security first).
+
+For a release build (needs a signing keystore):
+
+```bash
+python3 scripts/package-mobile.py --release
+```
+
+### iOS IPA (macOS + Xcode only)
+
+```bash
+python3 scripts/package-mobile.py --ios
+```
+
+This prints the full Xcode / `xcodebuild` steps. Requires macOS with Xcode ≥ 15 and an Apple Developer account for device/distribution builds.
+
+### Other options
+
+```
+--all     Build Android and print iOS steps
+--clean   Wipe build/ before starting
+```
+
 ## Dev Tool
 
 Open `dev.html` in a browser for a live parameter tuner. The game runs
@@ -68,7 +124,8 @@ game with your changes. Settings are saved to `localStorage`.
 │   └── camera-tests.html    # Camera zoom, positioning & look-ahead tests
 ├── scripts/
 │   ├── sync-dev.py         # Syncs JS modules into dev.html
-│   └── build-mobile.py     # Merges JS modules into dist/mobile.html
+│   ├── build-mobile.py     # Merges JS modules into dist/mobile.html
+│   └── package-mobile.py   # Packages dist/mobile.html as .apk / .ipa
 └── .github/workflows/
     └── ci.yml              # CI: all test suites + HTML validation
 </code>
